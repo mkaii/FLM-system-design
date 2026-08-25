@@ -1,0 +1,47 @@
+Vending Machine System — Problem Statement (Functional Requirements)
+
+Design a vending machine that manages product inventory, accepts payment, and dispenses products, exposed to the outside world through one simple interaction point.
+
+1. Inventory / Slots
+- The machine has a fixed number of slots, set up once when the machine is stocked.
+- Each slot independently tracks: which product it holds, that product's price, and how many units remain.
+- A slot with zero units remaining must be treated as unselectable — it must never be dispensed from, and must never go negative even if two purchase attempts race on it at the same moment.
+- Restocking a slot (adding units) must be possible without disturbing any other slot's count.
+
+2. Selection
+- A customer selects exactly one slot before payment can begin.
+- Selecting an empty slot must be rejected immediately, before any payment is accepted.
+- A selection can be cancelled before payment is completed; cancelling must not leave the machine in a state where it thinks a purchase is still in progress.
+
+3. Payment
+- The machine must accept more than one kind of payment (e.g. cash/coins, card, mobile wallet), and each kind must be able to be validated/processed independently of the others.
+- Adding a brand-new payment method later must require adding new code, not editing the logic that already handles the existing payment methods.
+- A purchase only completes once the amount received for the current selection is greater than or equal to that slot's price.
+- If payment is insufficient, the machine keeps waiting (does not dispense, does not cancel on its own) until enough is received or the customer cancels.
+
+4. Change / Cash Handling
+- The machine tracks how much change (of each denomination, or as a total float) it currently holds.
+- Before dispensing, if change is owed and the machine cannot make correct change with what it currently holds, the transaction must be refused up front — payment already inserted must be refunded, and the product must not be dispensed.
+- Successful transactions that hand out change must reduce the machine's change reserve accordingly; transactions that take in cash must increase it.
+
+5. Dispensing
+- A product can only be dispensed after selection + sufficient payment + successful change validation have all been satisfied, in that order.
+- Dispensing must reduce the selected slot's unit count by exactly one, atomically with respect to any other purchase happening at the same time.
+- After dispensing (or after a refund), the machine must return to being ready for a brand-new selection — no leftover state from the previous transaction should affect the next customer.
+
+6. Machine Lifecycle / Valid Operations Per Moment
+- At any given moment the machine is in exactly one condition: ready for a new selection, waiting on payment for an already-made selection, mid-dispense, or unable to serve anyone (out of stock across all slots, or out of change).
+- Which operations are even legal to attempt (can you select right now? can you insert money right now?) is determined entirely by which of these conditions the machine is currently in — a request that isn't legal for the current condition must be rejected cleanly, not silently ignored and not allowed to corrupt state.
+
+7. Reporting
+- The system must report, at any time: total units remaining across the whole machine, a per-slot breakdown, and which slots (if any) are empty or below a low-stock threshold.
+- This reporting must work correctly regardless of how many slots the machine has, without the reporting logic being hardcoded to a specific slot count.
+
+8. External Interaction
+- Whatever sits closest to the physical world (a button panel, a remote app, a technician's tool) should be able to drive an entire purchase — select, pay, receive product and change — through one small, stable set of calls.
+- That external caller should never need to directly coordinate slot lookup, payment validation, change calculation, and stock decrement itself; those steps must happen together, correctly ordered, behind the one interaction point.
+
+9. Extensibility (Stretch Goals)
+- If transaction history or stock lookups become expensive (e.g. backed by a database) or need access control (e.g. only a technician role can view restock history), that concern should be layerable on top of the existing lookup without changing what the lookup itself returns.
+- If a distributor runs many machines, a restock event on one machine should be able to notify an external inventory-tracking system, without the slot/machine needing to know who or how many systems are listening.
+- New product types, new payment methods, and new machine conditions (e.g. a maintenance/lockout condition) must each be addable as isolated additions, not as edits scattered across existing, already-working logic.

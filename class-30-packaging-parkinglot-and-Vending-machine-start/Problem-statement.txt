@@ -1,0 +1,23 @@
+Vending Machine System — Problem Statement
+
+Design a vending machine that manages product inventory, accepts payment, and dispenses products to a customer through a slot-based interface.
+
+Structure of the machine. The machine has a fixed number of slots. Each slot holds exactly one product type, a price for that product, and a quantity currently in stock. A customer selects a slot; the machine must never dispense from a slot that is empty, and must never allow two customers to simultaneously deplete the same slot below zero.
+
+Purchase flow. A customer selects a product, then inserts payment. Once payment received meets or exceeds the product's price, the machine dispenses the product and returns any change owed. If the customer cancels before payment is complete, or if payment is inserted but the selected slot turns out to be empty, the machine must refund whatever was inserted rather than keeping it or crashing.
+
+Machine behavior over time. At any given moment the machine is in a specific condition — idle and waiting for a selection, waiting for payment after a selection has been made, actively dispensing, or unable to serve any request because it is out of stock or out of change. What actions are valid at any moment (can a selection be made right now? can a coin be inserted right now?) should be determined by the machine's own current condition, not by scattered conditional checks living outside the machine.
+
+Payment methods. The machine must support multiple, independently swappable ways of paying — coins/cash, a card reader, a UPI/mobile wallet — and adding a new payment method later must not require rewriting the purchase flow itself.
+
+Change and cash handling. The machine must track how much change it has available. If a customer inserts more than the price and the machine cannot make correct change, the transaction must be rejected up front (before dispensing) with the payment refunded, not resolved by shorting the customer or dispensing anyway.
+
+Object creation. Creating a slot (product type, price, initial stock) should be centralized in one place rather than having slot-construction code scattered wherever a new slot happens to be needed.
+
+Single source of truth. Only one machine instance should exist for a given physical unit. Every selection, payment, and inventory check must operate against that same shared state — there should be no way for two different parts of the system to end up with two different, disagreeing views of what's in stock.
+
+Reporting. The system must be able to report current stock levels across all slots, and flag which slots are empty or low, without the reporting logic needing to know in advance how many slots exist or manually loop through them in a special way.
+
+Simple external interface. Whatever component is closest to the physical world — the keypad/button panel, a remote-monitoring app, a technician's diagnostic tool — should be able to trigger a purchase through a single, simple call, without needing to know about or manually coordinate slot lookup, state transitions, payment validation, and dispensing itself.
+
+Non-functional / stretch goal. If transaction history or inventory lookups become expensive (e.g. pulled from a database) or need to be access-controlled (e.g. only a technician can view restocking history), that concern should be addable without changing the core lookup logic itself. Separately, if a distributor operates many machines, restocking a slot in one machine should be able to notify an inventory-tracking system without the slot itself needing to know who's listening.
