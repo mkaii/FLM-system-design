@@ -53,5 +53,4 @@ void main() {
         System.out.println("Expected failure: " + e.getMessage());
     }
 
-    CompactSpot s = new CompactSpot();
 }
