@@ -29,23 +29,50 @@ public class VendingMachine {
         return instance;
     }
 
-    // add slot
+    public void addSlot(Slot slot) {
+        slots.add(slot);
+    }
 
-    // get slots
+    public List<Slot> getSlots() {
+        return slots;
+    }
 
-    //find slot by slot id
+    public Slot findSlot(String slotId) {
+        for (Slot slot : slots) {
+            if (slot.getId().equals(slotId)) {
+                return slot;
+            }
+        }
+        return null;
+    }
 
-    // has any stock : maybe can be moved to inventory service
 
-    // get state
+    //todo why not in reporting service
+    public boolean hasAnyStock() {
+        for (Slot slot : slots) {
+            if (slot.hasStock()) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-    // set state
+    public IMachineState getState() {
+        return state;
+    }
 
-    // get Pending purchase
+    public void setState(IMachineState state) {
+        this.state = state;
+    }
+
+    public PendingPurchase getPendingPurchase() {
+        return pendingPurchase;
+    }
 
     // start a purchase
 
     public void startPurchase(Slot slot){
+
         this.pendingPurchase = new PendingPurchase(slot);
     }
 
@@ -70,15 +97,16 @@ public class VendingMachine {
         changeService.receiveCash(amount);
     }
 
+    public void insertPayment(double amount) {
+        state.insertPayment(this, amount);
+    }
 
 
+    public void cancel() {
+        state.cancel(this);
+    }
 
-
-
-
-
-
-
-
-
+    public void selectSlot(String slotId) {
+        state.selectSlot(this, slotId);
+    }
 }
