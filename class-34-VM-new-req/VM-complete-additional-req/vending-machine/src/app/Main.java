@@ -1,3 +1,5 @@
+package app;
+
 import common.PaymentMethod;
 import facade.VendingMachineFacade;
 import machine.Slot;
