@@ -1,5 +1,5 @@
 package common;
 
 public enum PaymentMethod {
-    CASH, UPI, CARD
+    CASH, UPI, CARD, SPECIAL
 }

@@ -26,6 +26,7 @@ public class Main {
 
         VendingMachineFacade facade = new VendingMachineFacade(transactionManager);
 
+        //client code
         facade.selectProduct("A1");
         printIfCompleted(facade, facade.insertPayment(3.00, PaymentMethod.CASH));
 

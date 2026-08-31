@@ -1,5 +1,6 @@
 package payment;
 
+import machine.VendingMachine;
 import payment.exception.InvalidPaymentException;
 
 public class CardPayment implements IPaymentStrategy{

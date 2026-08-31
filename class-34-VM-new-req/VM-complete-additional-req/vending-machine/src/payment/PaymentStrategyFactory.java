@@ -9,7 +9,11 @@ public class PaymentStrategyFactory {
             return new CashPayment();
         } else if (method == PaymentMethod.CARD) {
             return new CardPayment();
-        } else {
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
             return new UPIPayment();
         }
     }

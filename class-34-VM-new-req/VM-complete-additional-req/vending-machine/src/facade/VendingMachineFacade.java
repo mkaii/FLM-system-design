@@ -69,8 +69,16 @@ public class VendingMachineFacade {
         machine.setState(DispensingState.getInstance());
 
         slot.dispenseOne(); // item got out of the machine for the customer to pick
-        machine.releaseChange(change);
-        machine.receiveCash(amountReceived); // this should be only possible for cash payments
+
+        IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+        /*strategy.releaseChange(machine, change);
+        strategy.receiveCash(machine, amountReceived);*/
+
+        if(strategy.doesAffectChangeReserve()) {
+            machine.releaseChange(change);
+            machine.receiveCash(amountReceived); // this should be only possible for cash payments
+        }
 
         Transaction transaction = machine.getPendingPurchase().complete(change, method, System.currentTimeMillis());
         transactionManager.save(transaction);

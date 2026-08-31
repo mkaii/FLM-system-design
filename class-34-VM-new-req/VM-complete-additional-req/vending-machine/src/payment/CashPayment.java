@@ -11,4 +11,10 @@ public class CashPayment implements IPaymentStrategy{
         }
         return amountTendered;
     }
+
+    @Override
+    public boolean doesAffectChangeReserve() {
+        return true;
+    }
+
 }

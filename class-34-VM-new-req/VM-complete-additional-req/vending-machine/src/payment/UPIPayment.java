@@ -13,4 +13,9 @@ public class UPIPayment implements IPaymentStrategy{
         }
         return amountTendered - PROCESSING_FEE;
     }
+
+    @Override
+    public boolean doesAffectChangeReserve() {
+        return true;
+    }
 }
