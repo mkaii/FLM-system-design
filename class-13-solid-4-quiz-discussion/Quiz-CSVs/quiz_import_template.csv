@@ -1,0 +1,3 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+What is the capital of France?,Paris,London,Berlin,Madrid,,1,Paris is the capital of France,1
+Which are JavaScript frameworks?,React,Django,Vue,Laravel,,"1,3",React and Vue are JavaScript frameworks,1
