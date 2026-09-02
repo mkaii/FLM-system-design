@@ -1,0 +1,94 @@
+Snake Game — Problem Statement (Functional Requirements)
+
+Design the classic Snake game: a snake moves on a grid, eats food to grow, and the game
+ends on collision. The game must be drivable programmatically — by a script or a bot today,
+by a real player later — without that driver knowing how any of it works internally.
+
+Each section lists what the system must do. HINT lines are optional nudges toward the
+design decision that section is really testing; solve the requirements first.
+
+
+1. Board
+- The game must run on a rectangular grid whose width and height are fixed when a game
+  is created.
+- The same game logic must work unchanged for any board size.
+- The game must be able to answer whether a given position lies inside the playable area.
+  HINT: more than one part of a move needs that answer. Decide who owns it before you
+  need it twice.
+
+2. Movement
+- The driver must be able to move the snake one cell at a time in one of four directions:
+  up, down, left, or right.
+- The snake must occupy a contiguous chain of cells, advancing head-first: the leading
+  cell moves into a new position and the trailing cell follows.
+- The game must end when the snake's head enters a cell its own body occupies.
+- Self-collision detection must not get slower as the snake grows longer.
+  HINT: "which cells am I on right now" and "what order are my segments in" are two
+  different questions. One data structure may not answer both cheaply.
+
+3. Growth
+- Eating food must lengthen the snake by exactly one segment.
+- Every move that does not eat food must leave the snake's length unchanged.
+- The snake must be allowed to move into the cell its tail is vacating on that same move.
+  Entering any other cell of its own body must end the game.
+  HINT: growth should need no counter, flag, or timer. Look at what happens to the tail
+  on an ordinary move, then ask what changes if that one step is skipped.
+
+4. Food
+- Exactly one food item must be present on the board at any time, with a replacement
+  appearing as soon as the current one is eaten.
+- Food must never appear on a cell the snake occupies.
+- The game must support multiple kinds of food worth different point values.
+- Adding a new kind of food later must not require editing any existing food kind, or the
+  logic that moves the snake.
+- The rule that decides which kind of food appears next must be selectable per game — one
+  game might spawn bonus food at random, another might guarantee it every fifth item —
+  and changing that rule must not require editing the food kinds themselves.
+  HINT: "which kind comes next" and "how that kind gets built" are two separate decisions
+  that vary independently. Don't let one class own both.
+
+5. Boundary Behavior
+- The game must support two board modes, chosen when a game is created:
+    (a) the edge is fatal — moving off the board ends the game;
+    (b) the edge wraps — moving off one edge continues onto the opposite edge.
+- Choosing between these modes must not change movement, growth, food, scoring, or
+  collision behavior in any way.
+- Adding a third mode later (say, an edge that bounces the snake back) must not require
+  editing any of those either.
+  HINT: write out the ordered steps of a single move for both modes and compare them.
+  Exactly one step should differ. Design so that only that step can be replaced.
+
+6. Game Lifecycle
+- The game must be in exactly one condition at any moment: playable, paused, or over.
+- Which actions are legal must depend entirely on the current condition — moving is legal
+  while playable but not while paused; resuming is legal while paused but not otherwise.
+- An illegal action must fail loudly and leave the game exactly as it was. It must never
+  be silently ignored, and must never corrupt the snake, the board, or the score.
+- "Over" must be terminal: no action can return a finished game to play.
+  HINT: a status field checked by if/else in every method will work and will rot. Consider
+  making the condition itself responsible for what's allowed.
+
+7. Scoring and Reporting
+- The game must report score changes and game-over to any number of interested parties.
+- Those parties must be attachable without the movement logic knowing who they are, how
+  many there are, or what they do with the information.
+- Adding a new kind of interested party must not require editing the movement logic.
+- The highest score reached across every game played in a single run of the program must
+  be tracked and readable, and must not reset when a new game starts.
+  HINT: the all-time high score is shared by games that don't otherwise know about each
+  other. Whatever holds it must be genuinely single — and watch how you create it.
+
+8. External Interaction
+- The driver must be able to play a complete game through a small, stable set of
+  operations — move, pause, resume, and ask whether the game is over.
+- The driver must never need to coordinate movement, growth, food placement, collision
+  checks, or score notification itself. Those must happen together, in the correct order,
+  behind those operations.
+
+9. Extensibility (Stretch Goals)
+- A new food kind, a new boundary mode, and a new score listener must each be addable in
+  isolation, not as edits scattered across working code.
+- A temporary effect — a power-up that doubles points for a limited number of moves —
+  must be layerable onto scoring without rewriting how scoring already works.
+- The game must remain correct if a second game is created and played in the same program
+  run, with no state leaking between them (except the shared all-time high score).
