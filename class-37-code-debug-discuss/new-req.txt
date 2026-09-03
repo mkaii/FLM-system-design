@@ -1,0 +1,211 @@
+Snake Game — New Requirements (from requirements.txt section 9) + Implementation Notes
+
+These are the three stretch-goal requirements taken from class-35's requirements.txt, what it
+actually took to satisfy each one against the existing snake-game-code, and where the existing
+design got in the way.
+
+
+=========================================================================================
+REQUIREMENT 1
+"A new food kind, a new boundary mode, and a new score listener must each be addable in
+ isolation, not as edits scattered across working code."
+=========================================================================================
+
+HOW IT WAS DONE
+Added one of each and edited nothing that already existed:
+
+  - new food kind      -> food/SuperFood.java (worth 5), food/SuperFoodCreator.java
+  - new boundary mode  -> engine/CylinderSnakeGame.java
+  - new score listener -> observer/MilestoneObserver.java
+
+Each one only had to plug into an existing extension point:
+  - SuperFood extends FoodItem, SuperFoodCreator extends FoodCreator. FoodItem, FoodCreator,
+    NormalFood and BonusFood were not touched.
+  - CylinderSnakeGame extends SnakeGame and overrides handleBoundary() only. SnakeGame,
+    ClassicSnakeGame and WrapAroundSnakeGame were not touched.
+  - MilestoneObserver implements IGameObserver. SnakeGame, IGameObserver,
+    ConsoleScoreObserver and HighScoreObserver were not touched.
+
+Also added food/CyclingFoodSpawnStrategy.java (cycles normal -> bonus -> super), because a new
+food kind is useless until some spawn rule actually asks for it. That is a fourth
+isolated addition, again with no edit to the existing strategies.
+
+VERDICT: requirement met as-is. The three extension points the earlier classes built
+(FoodCreator, handleBoundary, IGameObserver) all held up without modification.
+
+ISSUE FOUND — the boundary mode we could NOT build
+requirements.txt names "an edge that bounces the snake back" as the example third mode.
+That one is impossible with the current design, for two separate reasons:
+
+  1. The hook signature is handleBoundary(Point rawNewHead). It receives only the candidate
+     position. It does not receive the direction of travel, and it cannot see the current
+     head (body is private in SnakeGame). A bounce means "reverse direction", which cannot
+     be expressed by returning a position.
+  2. SnakeGame holds no direction state at all - every move's direction is handed in by the
+     caller. So even if a bounce could be computed, there is nowhere to persist "you are now
+     travelling the other way" for the following move.
+
+Returning a reflected point (row -1 becomes row 1) compiles and looks like a bounce, but the
+head then lands on its own neck and dies instantly, so it is not a working mode.
+
+CylinderSnakeGame was built instead: a Pac-Man style board where left/right edges wrap
+through tunnels and top/bottom edges are fatal walls. That IS expressible with the current
+hook, which is exactly why it was chosen.
+
+To make bounce possible later, the hook has to become something like
+handleBoundary(Point rawNewHead, Direction direction) returning a richer result than a
+Point - i.e. the Template Method's hook signature is the thing that needs to change, not
+any of the subclasses.
+
+
+=========================================================================================
+REQUIREMENT 2
+"A temporary effect - a power-up that doubles points for a limited number of moves - must be
+ layerable onto scoring without rewriting how scoring already works."
+=========================================================================================
+
+ISSUE FOUND FIRST — this requirement was NOT satisfiable as the code stood
+SnakeGame.performMove() had scoring hardcoded in one line:
+
+    score += currentFood.getPoints();
+
+There was no scoring abstraction, so there was nothing to layer anything onto. Unlike
+requirement 1, this one could not be done purely by addition - a seam had to be cut into
+SnakeGame first. Worth being upfront about with the class: the design did not already
+accommodate this, it had to be opened up.
+
+HOW IT WAS DONE
+New scoring abstraction in the score package:
+
+  - IScoringRule          - pointsFor(FoodItem) plus onMove(), a per-move tick so rules that
+                            expire after N moves can count down
+  - BaseScoringRule       - the default: a food is worth its face value, forever
+  - ScoringRuleDecorator  - abstract, wraps another IScoringRule and forwards everything it
+                            does not change, so effects can stack on each other
+  - DoublePointsDecorator - doubles whatever the wrapped rule returned, for N moves
+
+Why onMove() exists: "for a limited number of moves" cannot be measured from pointsFor()
+alone, because pointsFor() is only called when food is eaten. The rule needs to know that
+ordinary moves are passing too, so it can expire.
+
+Changes to SnakeGame (the only pre-existing logic class edited):
+  - new field: private IScoringRule scoringRule = new BaseScoringRule();
+  - getScoringRule() / setScoringRule()
+  - performMove() now does  score += scoringRule.pointsFor(currentFood)
+  - performMove() calls scoringRule.onMove() as its LAST line
+
+Ordering detail that matters: the tick has to happen after scoring, not before. If it ticked
+first, a 1-move power-up would already have expired by the time the food eaten on that very
+move got scored.
+
+Activation reads as "wrap whatever is already there":
+
+    game.setScoringRule(new DoublePointsDecorator(game.getScoringRule(), 12));
+
+Every game starts with a plain BaseScoringRule, so after that line the chain is:
+
+    DoublePointsDecorator(12 moves)  ->  BaseScoringRule
+
+When food is eaten, SnakeGame asks its rule for pointsFor(food). That call hits the decorator,
+which asks the wrapped rule first (BaseScoringRule returns 5 for a SuperFood), then doubles it
+to 10 while still active, and stops doubling once its 12 moves are spent. SnakeGame never
+learns the name DoublePointsDecorator, and never learns that doubling is a concept at all.
+
+WHY A DECORATOR AND NOT SOMETHING ELSE
+The requirement says the effect must be "layerable onto scoring without rewriting how scoring
+already works". The word "layerable" is the tell: the effect has to sit on top of whatever
+scoring already is, not replace it. Two alternatives were considered and are both worse:
+
+  1. A boolean flag on SnakeGame - if (doubleActive) points *= 2
+     This puts the effect's rules inside the game itself. Every future effect (triple points,
+     half points during a penalty, a no-scoring practice mode) then means another flag and
+     another branch inside performMove(). That is exactly the combinatorial mess the class-24
+     Decorator session was built to demonstrate, just with scoring instead of payments.
+
+  2. A subclass of BaseScoringRule - e.g. DoublePointsScoringRule
+     A rule can only be one subclass. Two simultaneous effects would need a combined
+     DoubleAndTripleScoringRule class, and then one class per combination after that.
+
+With a decorator, stacking two effects is just nesting them:
+
+    new DoublePointsDecorator(new SomeOtherEffect(game.getScoringRule()), 12)
+
+This is deliberately the same shape as the PaymentDecorator / CashBackDecorator pair from
+class-34: an abstract base that holds the wrapped object and forwards everything it does not
+change, and a concrete subclass that overrides only the one method it cares about. Same
+pattern, different domain - worth pointing out in class as the callback.
+
+VERIFICATION (real output from app.Main)
+CyclingFoodSpawnStrategy yields normal(1) -> bonus(3) -> super(5) -> repeat, so the two games
+in stretchGoalsDemo() eat the identical food sequence, one with the power-up and one without:
+
+  eat #   food        with power-up        without
+  1       normal 1    +2  -> 2             +1  -> 1
+  2       bonus  3    +6  -> 8             +3  -> 4
+  3       super  5    +10 -> 18            +5  -> 9
+  4       normal 1    +1  -> 19  (expired) +1  -> 10
+  5       bonus  3    +3  -> 22            +3  -> 13
+  6       super  5    +5  -> 27            +5  -> 18
+
+Doubling applied to exactly the first three eats and then went inert once the 12 moves were
+used up. The second column is exactly the first with the doubling removed, which is the proof
+that the decorator - and only the decorator - accounts for the difference.
+
+KNOWN WEAKNESS
+An expired DoublePointsDecorator stays in the chain forever, just inert. Nothing unwraps it.
+Over a long game with many power-ups the delegation chain keeps growing. Harmless here,
+but it is the honest limitation of layering with no removal path.
+
+
+=========================================================================================
+REQUIREMENT 3
+"The game must remain correct if a second game is created and played in the same program run,
+ with no state leaking between them (except the shared all-time high score)."
+=========================================================================================
+
+HOW IT WAS DONE
+stretchGoalsDemo() plays a second CylinderSnakeGame in the same run, built with the same
+board size, same start position, same seed and a fresh spawn strategy, and prints its state
+before it moves:
+
+    fresh score=0 length=1 isOver=false scoringRule=BaseScoringRule
+
+score, length, game-over condition and scoring rule all start clean - the first game's
+27 points and its DoublePointsDecorator did not follow it. The all-time high score did
+carry across (27), which is the one leak the requirement explicitly allows.
+
+WHY IT ALREADY WORKED
+All per-game state (board, body, occupied, score, current food, current state object,
+observers, scoring rule) lives in instance fields on SnakeGame, so a new game gets its own.
+The only statics in the codebase are:
+  - HighScoreRegistry.INSTANCE - deliberately shared, and the allowed exception
+  - RunningState / PausedState / GameOverState singletons - these hold no fields at all,
+    so sharing them between games is safe
+
+ISSUE FOUND — the trap nothing in the code prevents
+Requirement 3 is easy to break by accident, because the spawn strategies are stateful:
+BonusEveryNFoodSpawnStrategy and CyclingFoodSpawnStrategy both keep a mutable spawnCount.
+Reusing ONE strategy instance across two games leaks that counter, so the second game
+starts mid-cycle. The demo avoids it by constructing a fresh strategy per game, but nothing
+in the code enforces that - no comment, no guard, no reset.
+
+Same shape of problem with Random: Main currently hands the same Random instance to both the
+spawn strategy and the game's position picker, so their draws interleave. Not a leak between
+games, but it makes "same seed = same game" harder to reason about than it looks.
+
+
+=========================================================================================
+UNRELATED PRE-EXISTING BUG FOUND WHILE DOING THIS
+=========================================================================================
+
+SnakeGame.spawnFood() can hang forever:
+
+    do { position = random position } while (occupied.contains(position));
+
+If the snake ever fills the board there is no free cell, and the loop never exits. There is no
+"board is full" branch anywhere - filling the board is a win condition that simply does not
+exist in the design. Reachable in principle on the small boards used in the demos.
+
+Also still present: the commented-out old bitesItself line in performMove(), left over from
+the class-37 debugging session. Worth deleting so there is only one live version of that
+check to read.
