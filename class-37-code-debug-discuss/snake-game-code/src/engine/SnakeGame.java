@@ -9,6 +9,8 @@ import engine.state.RunningState;
 import food.FoodItem;
 import food.IFoodSpawnStrategy;
 import observer.IGameObserver;
+import score.BaseScoringRule;
+import score.IScoringRule;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -32,6 +34,10 @@ public abstract class SnakeGame {
     private IGameState state = RunningState.getInstance();
     private FoodItem currentFood;
     private int score = 0;
+
+    // starts as the plain face-value rule; temporary effects get layered on top of
+    // whatever is here via setScoringRule(), the game itself never learns their names
+    private IScoringRule scoringRule = new BaseScoringRule();
 
     protected SnakeGame(Board board, Point startPosition, IFoodSpawnStrategy foodSpawnStrategy, Random random) {
         this.board = board;
@@ -85,6 +91,16 @@ public abstract class SnakeGame {
         return body.size();
     }
 
+    public IScoringRule getScoringRule() {
+        return scoringRule;
+    }
+
+    // read-then-wrap is the intended usage:
+    //   game.setScoringRule(new DoublePointsDecorator(game.getScoringRule(), 10));
+    public void setScoringRule(IScoringRule scoringRule) {
+        this.scoringRule = scoringRule;
+    }
+
 
 
     // called by RunningState once a move has been allowed through
@@ -113,7 +129,7 @@ public abstract class SnakeGame {
         if (eatsFood) {
             body.addFirst(newHead);
             occupied.add(newHead);
-            score += currentFood.getPoints();
+            score += scoringRule.pointsFor(currentFood);
             currentFood = spawnFood();
             notifyScoreChanged();
         } else {
@@ -126,6 +142,10 @@ public abstract class SnakeGame {
             body.addFirst(newHead);
             occupied.add(newHead);
         }
+
+        // tick last, so a rule that expires after N moves still applied to the food
+        // eaten on this move
+        scoringRule.onMove();
     }
 
     // the varying step: null means "this position is not a legal place to be" -> game over

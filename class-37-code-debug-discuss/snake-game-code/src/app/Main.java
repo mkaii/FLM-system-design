@@ -4,14 +4,18 @@ import board.Board;
 import common.Direction;
 import common.Point;
 import engine.ClassicSnakeGame;
+import engine.CylinderSnakeGame;
 import engine.SnakeGame;
 import engine.WrapAroundSnakeGame;
 import engine.exception.InvalidMoveException;
 import food.BonusEveryNFoodSpawnStrategy;
+import food.CyclingFoodSpawnStrategy;
 import food.IFoodSpawnStrategy;
 import food.RandomFoodSpawnStrategy;
 import observer.ConsoleScoreObserver;
 import observer.HighScoreObserver;
+import observer.MilestoneObserver;
+import score.DoublePointsDecorator;
 import score.HighScoreRegistry;
 
 import java.util.Random;
@@ -22,7 +26,41 @@ public class Main {
         System.out.println();
         wrapAroundGameDemo();
         System.out.println();
+        stretchGoalsDemo();
+        System.out.println();
         System.out.println("all-time high score: " + HighScoreRegistry.getInstance().getHighScore());
+    }
+
+    // ---- section 9 of requirements.txt ----
+    private static void stretchGoalsDemo() {
+        System.out.println("-- stretch goals --");
+
+        // (a) new food kind + new boundary mode + new listener, all plugged in without
+        //     a single edit to any pre-existing class
+        Board board = new Board(8, 8);
+        SnakeGame game = new CylinderSnakeGame(board, new Point(4, 4),
+                new CyclingFoodSpawnStrategy(), new Random(11));
+        game.addObserver(new ConsoleScoreObserver());
+        game.addObserver(new MilestoneObserver(6));
+        game.addObserver(new HighScoreObserver());
+
+        // (b) a temporary effect layered on top of whatever scoring already is
+        game.setScoringRule(new DoublePointsDecorator(game.getScoringRule(), 12));
+        System.out.println("double points active for the next 12 moves");
+
+        runGreedyUntilGameOverOrLimit(game, 40);
+
+        // (c) a second game in the same run must not inherit anything from the first,
+        //     apart from the shared all-time high score
+        System.out.println("second game, same run:");
+        SnakeGame second = new CylinderSnakeGame(new Board(8, 8), new Point(4, 4),
+                new CyclingFoodSpawnStrategy(), new Random(11));
+        second.addObserver(new ConsoleScoreObserver());
+        System.out.println("  fresh score=" + second.getScore()
+                + " length=" + second.getLength()
+                + " isOver=" + second.isOver()
+                + " scoringRule=" + second.getScoringRule().getClass().getSimpleName());
+        runGreedyUntilGameOverOrLimit(second, 40);
     }
 
     private static void classicGameDemo() {
