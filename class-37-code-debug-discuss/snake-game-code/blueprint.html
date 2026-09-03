@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snake Game Blueprint</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  :root{
+    --ink:#16213A;
+    --paper:#F1F4F7;
+    --panel:#FFFFFF;
+    --rule:#C7D2DE;
+    --muted:#5B6B84;
+    --accent:#D97B3F;
+    --accent-soft:#F3DFCB;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#E7ECF2;
+      --paper:#0E1626;
+      --panel:#131E30;
+      --rule:#2B3D58;
+      --muted:#93A4BD;
+      --accent:#E08A4F;
+      --accent-soft:#3A2A1E;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#E7ECF2;
+    --paper:#0E1626;
+    --panel:#131E30;
+    --rule:#2B3D58;
+    --muted:#93A4BD;
+    --accent:#E08A4F;
+    --accent-soft:#3A2A1E;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ color-scheme: light dark; }
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg, color-mix(in srgb, var(--rule) 45%, transparent) 0px, transparent 1px, transparent 28px, color-mix(in srgb, var(--rule) 45%, transparent) 29px),
+      repeating-linear-gradient(90deg, color-mix(in srgb, var(--rule) 45%, transparent) 0px, transparent 1px, transparent 28px, color-mix(in srgb, var(--rule) 45%, transparent) 29px);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    padding: 32px 20px 80px;
+  }
+
+  .sheet-set{
+    max-width: 900px;
+    margin: 0 auto;
+    display:flex;
+    flex-direction:column;
+    gap: 28px;
+  }
+
+  /* ---- title block ---- */
+  .titleblock{
+    background:var(--panel);
+    border:1.5px solid var(--ink);
+    padding: 22px 26px;
+  }
+  .titleblock h1{
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+    font-weight:700;
+    font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.1rem);
+    letter-spacing:-0.01em;
+    margin:0 0 4px;
+    text-wrap: balance;
+  }
+  .titleblock .sub{
+    color:var(--muted);
+    font-size:0.95rem;
+    margin: 0 0 18px;
+  }
+  .meta-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap: 10px 22px;
+    border-top: 1px solid var(--rule);
+    padding-top: 14px;
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.78rem;
+  }
+  .meta-row dt{
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    font-size:0.68rem;
+    margin-bottom:2px;
+  }
+  .meta-row dd{ margin:0; font-weight:600; }
+  .meta-item{ display:flex; flex-direction:column; }
+
+  /* ---- legend ---- */
+  .legend{
+    background:var(--panel);
+    border:1px solid var(--rule);
+    padding: 14px 22px;
+    display:flex;
+    flex-wrap:wrap;
+    gap: 20px 32px;
+    align-items:center;
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+    font-size:0.78rem;
+  }
+  .legend-item{ display:flex; align-items:center; gap:8px; color:var(--muted); }
+  .legend-item svg{ width:56px; height:16px; flex:none; }
+
+  /* ---- sheet panels ---- */
+  .sheet{
+    background:var(--panel);
+    border:1.5px solid var(--ink);
+    padding: 0;
+  }
+  .sheet-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--rule);
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+  }
+  .sheet-head .no{
+    font-size:0.72rem;
+    color:var(--muted);
+    letter-spacing:0.08em;
+  }
+  .sheet-head h2{
+    font-size: 1.05rem;
+    margin:0;
+    font-weight:600;
+  }
+  .sheet-body{ padding: 18px 20px 8px; }
+  .sheet-body svg{ display:block; width:100%; height:auto; margin: 0 auto; }
+  figure{ margin:0; }
+  figcaption{
+    color:var(--muted);
+    font-size: 0.86rem;
+    line-height:1.5;
+    padding: 10px 22px 18px;
+    max-width: 62ch;
+  }
+  figcaption code, .meta-row code{
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+    font-size:0.92em;
+    background: color-mix(in srgb, var(--rule) 35%, transparent);
+    padding: 0.05em 0.35em;
+  }
+
+  /* ---- shared svg node styling (classes referenced from inline diagrams) ---- */
+  .diagram{ color: var(--ink); }
+  .node-box{ fill: var(--panel); stroke: var(--ink); stroke-width: 1.4; }
+  .node-box-accent{ fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+  .node-title{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-weight:700; font-size:13px; fill: var(--ink); }
+  .node-stereo{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-style:italic; font-size:10px; fill: var(--muted); }
+  .node-member{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:11px; fill: var(--muted); }
+  .node-member-accent{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:11px; fill: var(--accent); font-weight:600; }
+  .node-rule{ stroke: var(--rule); stroke-width:1; }
+  .edge-line{ stroke: var(--ink); stroke-width:1.4; fill:none; }
+  .edge-label{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:10.5px; fill: var(--muted); }
+  .tri-marker{ fill: var(--panel); stroke: var(--ink); stroke-width:1.3; }
+  .arrow-marker{ fill:none; stroke: var(--ink); stroke-width:1.4; }
+</style>
+</head>
+<body>
+
+<div class="sheet-set">
+
+  <header class="titleblock">
+    <h1>Snake Game Blueprint</h1>
+    <p class="sub">Design-pattern reference for <code>snakegame-test</code> — six patterns across seven packages, drawn as a working schematic, not a screenshot of the code.</p>
+    <dl class="meta-row">
+      <div class="meta-item"><dt>packages</dt><dd>7</dd></div>
+      <div class="meta-item"><dt>classes</dt><dd>24</dd></div>
+      <div class="meta-item"><dt>patterns</dt><dd>State · Observer · Factory Method · Strategy · Template Method · Singleton</dd></div>
+      <div class="meta-item"><dt>sheets</dt><dd>01–05</dd></div>
+    </dl>
+  </header>
+
+  <div class="legend" role="img" aria-label="Legend: solid line with hollow triangle means extends, dashed line with hollow triangle means implements, solid line with open arrowhead means a labeled uses or delegates relationship">
+    <div class="legend-item">
+      <svg viewBox="0 0 56 16"><defs><marker id="lg-tri" markerWidth="10" markerHeight="9" refX="9" refY="4.5" orient="auto"><polygon class="tri-marker" points="0,0 10,4.5 0,9"/></marker></defs>
+        <line x1="2" y1="8" x2="46" y2="8" stroke="var(--ink)" stroke-width="1.4" marker-end="url(#lg-tri)"/></svg>
+      extends
+    </div>
+    <div class="legend-item">
+      <svg viewBox="0 0 56 16"><defs><marker id="lg-tri2" markerWidth="10" markerHeight="9" refX="9" refY="4.5" orient="auto"><polygon class="tri-marker" points="0,0 10,4.5 0,9"/></marker></defs>
+        <line x1="2" y1="8" x2="46" y2="8" stroke="var(--ink)" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#lg-tri2)"/></svg>
+      implements
+    </div>
+    <div class="legend-item">
+      <svg viewBox="0 0 56 16"><defs><marker id="lg-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker></defs>
+        <line x1="2" y1="8" x2="46" y2="8" stroke="var(--ink)" stroke-width="1.4" marker-end="url(#lg-arrow)"/></svg>
+      uses / delegates <em>(verb on the arrow)</em>
+    </div>
+  </div>
+
+  <!-- ===================== SHEET 01 — STATE ===================== -->
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 01 / 05</span><h2>State — game lifecycle</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 760 300" role="img" aria-label="SnakeGame holds a current IGameState and delegates move, pause and resume to it. RunningState, PausedState and GameOverState each implement IGameState with different behavior.">
+          <defs>
+            <marker id="s1-tri" markerWidth="11" markerHeight="10" refX="10" refY="5" orient="auto"><polygon class="tri-marker" points="0,0 11,5 0,10"/></marker>
+            <marker id="s1-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="node-box" x="30" y="20" width="200" height="86"/>
+          <text class="node-title" x="42" y="42">SnakeGame</text>
+          <line class="node-rule" x1="30" y1="52" x2="230" y2="52"/>
+          <text class="node-member" x="42" y="70">− state: IGameState</text>
+          <text class="node-member" x="42" y="86">+ move(direction)</text>
+
+          <line class="edge-line" x1="230" y1="60" x2="266" y2="60" marker-end="url(#s1-arrow)"/>
+          <text class="edge-label" x="234" y="52">delegates to</text>
+
+          <rect class="node-box" x="270" y="20" width="220" height="86"/>
+          <text class="node-stereo" x="282" y="36">«interface»</text>
+          <text class="node-title" x="282" y="52">IGameState</text>
+          <line class="node-rule" x1="270" y1="60" x2="490" y2="60"/>
+          <text class="node-member" x="282" y="76">+ move(game, dir)</text>
+          <text class="node-member" x="282" y="92">+ pause(game) / resume(game)</text>
+
+          <rect class="node-box" x="30" y="200" width="200" height="70"/>
+          <text class="node-title" x="42" y="222">RunningState</text>
+          <line class="node-rule" x1="30" y1="230" x2="230" y2="230"/>
+          <text class="node-member" x="42" y="248">move → game.performMove()</text>
+          <text class="node-member" x="42" y="262">pause → PausedState</text>
+
+          <rect class="node-box" x="280" y="200" width="200" height="70"/>
+          <text class="node-title" x="292" y="222">PausedState</text>
+          <line class="node-rule" x1="280" y1="230" x2="480" y2="230"/>
+          <text class="node-member" x="292" y="248">move → throws</text>
+          <text class="node-member" x="292" y="262">resume → RunningState</text>
+
+          <rect class="node-box" x="530" y="200" width="200" height="70"/>
+          <text class="node-title" x="542" y="222">GameOverState</text>
+          <line class="node-rule" x1="530" y1="230" x2="730" y2="230"/>
+          <text class="node-member" x="542" y="248">move/pause/resume</text>
+          <text class="node-member" x="542" y="262">→ all throw</text>
+
+          <line class="edge-line" x1="130" y1="200" x2="378" y2="108" stroke-dasharray="4,3" marker-end="url(#s1-tri)"/>
+          <line class="edge-line" x1="380" y1="200" x2="380" y2="108" stroke-dasharray="4,3" marker-end="url(#s1-tri)"/>
+          <line class="edge-line" x1="630" y1="200" x2="382" y2="108" stroke-dasharray="4,3" marker-end="url(#s1-tri)"/>
+        </svg>
+        <figcaption>Every legal move goes through <code>state.move(this, direction)</code> before <code>SnakeGame</code> ever touches the board — a call in <code>PausedState</code> or <code>GameOverState</code> never reaches the movement logic at all, it just throws.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== SHEET 02 — OBSERVER ===================== -->
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 02 / 05</span><h2>Observer — score &amp; game-over events</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 660 340" role="img" aria-label="SnakeGame notifies a list of IGameObserver listeners. ConsoleScoreObserver prints updates; HighScoreObserver records the final score into the HighScoreRegistry singleton.">
+          <defs>
+            <marker id="s2-tri" markerWidth="11" markerHeight="10" refX="10" refY="5" orient="auto"><polygon class="tri-marker" points="0,0 11,5 0,10"/></marker>
+            <marker id="s2-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="node-box" x="20" y="20" width="210" height="80"/>
+          <text class="node-title" x="32" y="42">SnakeGame</text>
+          <line class="node-rule" x1="20" y1="52" x2="230" y2="52"/>
+          <text class="node-member" x="32" y="70">− observers: List&lt;IGameObserver&gt;</text>
+          <text class="node-member" x="32" y="86">+ addObserver(o)</text>
+
+          <line class="edge-line" x1="230" y1="55" x2="386" y2="55" marker-end="url(#s2-arrow)"/>
+          <text class="edge-label" x="248" y="47">notifies</text>
+
+          <rect class="node-box" x="390" y="20" width="230" height="80"/>
+          <text class="node-stereo" x="402" y="36">«interface»</text>
+          <text class="node-title" x="402" y="52">IGameObserver</text>
+          <line class="node-rule" x1="390" y1="60" x2="620" y2="60"/>
+          <text class="node-member" x="402" y="76">+ onScoreChanged(score)</text>
+          <text class="node-member" x="402" y="92">+ onGameOver(score)</text>
+
+          <rect class="node-box" x="40" y="180" width="220" height="60"/>
+          <text class="node-title" x="52" y="202">ConsoleScoreObserver</text>
+          <line class="node-rule" x1="40" y1="210" x2="260" y2="210"/>
+          <text class="node-member" x="52" y="226">prints to stdout</text>
+
+          <rect class="node-box" x="400" y="180" width="220" height="60"/>
+          <text class="node-title" x="412" y="202">HighScoreObserver</text>
+          <line class="node-rule" x1="400" y1="210" x2="620" y2="210"/>
+          <text class="node-member" x="412" y="226">onGameOver → records</text>
+
+          <line class="edge-line" x1="150" y1="180" x2="500" y2="108" stroke-dasharray="4,3" marker-end="url(#s2-tri)"/>
+          <line class="edge-line" x1="510" y1="180" x2="503" y2="108" stroke-dasharray="4,3" marker-end="url(#s2-tri)"/>
+
+          <rect class="node-box-accent" x="400" y="280" width="220" height="52"/>
+          <text class="node-stereo" x="412" y="296">«singleton»</text>
+          <text class="node-member-accent" x="412" y="314">HighScoreRegistry.getInstance()</text>
+
+          <line class="edge-line" x1="510" y1="240" x2="510" y2="272" marker-end="url(#s2-arrow)"/>
+          <text class="edge-label" x="516" y="262">records into</text>
+        </svg>
+        <figcaption>Two independent listeners react to the same events without knowing about each other. <code>HighScoreRegistry</code> is eagerly initialized on class load — the same lazy-init race that class-30's parking-lot retro notes flagged doesn't exist here.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== SHEET 03 — FACTORY METHOD ===================== -->
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 03 / 05</span><h2>Factory Method — food creation</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 760 470" role="img" aria-label="Abstract FoodCreator is extended by NormalFoodCreator and BonusFoodCreator, each creating the matching FoodItem subclass, NormalFood or BonusFood.">
+          <defs>
+            <marker id="s3-tri" markerWidth="11" markerHeight="10" refX="10" refY="5" orient="auto"><polygon class="tri-marker" points="0,0 11,5 0,10"/></marker>
+            <marker id="s3-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="node-box" x="270" y="20" width="220" height="80"/>
+          <text class="node-stereo" x="282" y="36">«abstract»</text>
+          <text class="node-title" x="282" y="52">FoodCreator</text>
+          <line class="node-rule" x1="270" y1="60" x2="490" y2="60"/>
+          <text class="node-member" x="282" y="76">+ createFood(pos) {abstract}</text>
+          <text class="node-member" x="282" y="90">+ spawnAt(pos)</text>
+
+          <rect class="node-box" x="40" y="170" width="220" height="56"/>
+          <text class="node-title" x="52" y="192">NormalFoodCreator</text>
+          <line class="node-rule" x1="40" y1="200" x2="260" y2="200"/>
+          <text class="node-member" x="52" y="216">→ new NormalFood(pos)</text>
+
+          <rect class="node-box" x="500" y="170" width="220" height="56"/>
+          <text class="node-title" x="512" y="192">BonusFoodCreator</text>
+          <line class="node-rule" x1="500" y1="200" x2="720" y2="200"/>
+          <text class="node-member" x="512" y="216">→ new BonusFood(pos)</text>
+
+          <line class="edge-line" x1="150" y1="170" x2="378" y2="108" marker-end="url(#s3-tri)"/>
+          <line class="edge-line" x1="610" y1="170" x2="382" y2="108" marker-end="url(#s3-tri)"/>
+
+          <rect class="node-box" x="270" y="290" width="220" height="60"/>
+          <text class="node-stereo" x="282" y="306">«abstract»</text>
+          <text class="node-title" x="282" y="324">FoodItem</text>
+          <line class="node-rule" x1="270" y1="332" x2="490" y2="332"/>
+          <text class="node-member" x="282" y="346">position, points</text>
+
+          <rect class="node-box" x="40" y="410" width="220" height="50"/>
+          <text class="node-title" x="52" y="432">NormalFood</text>
+          <line class="node-rule" x1="40" y1="440" x2="260" y2="440"/>
+          <text class="node-member" x="52" y="454">points = 1</text>
+
+          <rect class="node-box" x="500" y="410" width="220" height="50"/>
+          <text class="node-title" x="512" y="432">BonusFood</text>
+          <line class="node-rule" x1="500" y1="440" x2="720" y2="440"/>
+          <text class="node-member" x="512" y="454">points = 3</text>
+
+          <line class="edge-line" x1="150" y1="410" x2="378" y2="350" marker-end="url(#s3-tri)"/>
+          <line class="edge-line" x1="610" y1="410" x2="382" y2="350" marker-end="url(#s3-tri)"/>
+
+          <line class="edge-line" x1="150" y1="226" x2="150" y2="404" stroke-dasharray="4,3" marker-end="url(#s3-arrow)"/>
+          <text class="edge-label" x="156" y="320">creates</text>
+          <line class="edge-line" x1="610" y1="226" x2="610" y2="404" stroke-dasharray="4,3" marker-end="url(#s3-arrow)"/>
+          <text class="edge-label" x="616" y="320">creates</text>
+        </svg>
+        <figcaption>Two parallel hierarchies, one virtual constructor apiece. Adding a third food type means one new <code>FoodCreator</code> subclass and one new <code>FoodItem</code> subclass — nothing that already exists changes.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== SHEET 04 — STRATEGY ===================== -->
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 04 / 05</span><h2>Strategy — which food spawns next</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 760 380" role="img" aria-label="SnakeGame asks an IFoodSpawnStrategy for the next FoodCreator. RandomFoodSpawnStrategy and BonusEveryNFoodSpawnStrategy implement it with different rules, both eventually returning a FoodCreator from the factory method sheet.">
+          <defs>
+            <marker id="s4-tri" markerWidth="11" markerHeight="10" refX="10" refY="5" orient="auto"><polygon class="tri-marker" points="0,0 11,5 0,10"/></marker>
+            <marker id="s4-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="node-box" x="20" y="20" width="200" height="70"/>
+          <text class="node-title" x="32" y="42">SnakeGame</text>
+          <line class="node-rule" x1="20" y1="52" x2="220" y2="52"/>
+          <text class="node-member" x="32" y="70">− foodSpawnStrategy</text>
+
+          <line class="edge-line" x1="220" y1="55" x2="376" y2="55" marker-end="url(#s4-arrow)"/>
+          <text class="edge-label" x="228" y="47">asks for next creator</text>
+
+          <rect class="node-box" x="380" y="20" width="230" height="70"/>
+          <text class="node-stereo" x="392" y="36">«interface»</text>
+          <text class="node-title" x="392" y="52">IFoodSpawnStrategy</text>
+          <line class="node-rule" x1="380" y1="60" x2="610" y2="60"/>
+          <text class="node-member" x="392" y="76">+ nextFoodCreator()</text>
+
+          <rect class="node-box" x="50" y="170" width="240" height="66"/>
+          <text class="node-title" x="62" y="192">RandomFoodSpawnStrategy</text>
+          <line class="node-rule" x1="50" y1="200" x2="290" y2="200"/>
+          <text class="node-member" x="62" y="216">20% chance of bonus</text>
+
+          <rect class="node-box" x="390" y="170" width="270" height="66"/>
+          <text class="node-title" x="402" y="192">BonusEveryNFoodSpawnStrategy</text>
+          <line class="node-rule" x1="390" y1="200" x2="660" y2="200"/>
+          <text class="node-member" x="402" y="216">every Nth spawn is bonus</text>
+
+          <line class="edge-line" x1="170" y1="170" x2="488" y2="98" stroke-dasharray="4,3" marker-end="url(#s4-tri)"/>
+          <line class="edge-line" x1="525" y1="170" x2="493" y2="98" stroke-dasharray="4,3" marker-end="url(#s4-tri)"/>
+
+          <rect class="node-box" x="270" y="290" width="220" height="56"/>
+          <text class="node-title" x="282" y="312">FoodCreator</text>
+          <line class="node-rule" x1="270" y1="320" x2="490" y2="320"/>
+          <text class="node-member" x="282" y="336">— see Sheet 03 —</text>
+
+          <line class="edge-line" x1="170" y1="236" x2="360" y2="288" marker-end="url(#s4-arrow)"/>
+          <text class="edge-label" x="200" y="272">returns</text>
+          <line class="edge-line" x1="525" y1="236" x2="440" y2="288" marker-end="url(#s4-arrow)"/>
+          <text class="edge-label" x="460" y="272">returns</text>
+        </svg>
+        <figcaption>Strategy decides <em>which</em> creator runs next; Factory Method (Sheet 03) decides <em>how</em> that creator builds its product. Swapping <code>RandomFoodSpawnStrategy</code> for <code>BonusEveryNFoodSpawnStrategy</code> on a game instance changes spawn behavior without touching <code>SnakeGame</code>.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== SHEET 05 — TEMPLATE METHOD ===================== -->
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 05 / 05</span><h2>Template Method — the one step that varies</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 760 380" role="img" aria-label="Abstract SnakeGame fixes the five-step move pipeline; only step two, handleBoundary, is an abstract hook. ClassicSnakeGame ends the game at the wall; WrapAroundSnakeGame wraps the coordinate instead.">
+          <defs>
+            <marker id="s5-tri" markerWidth="11" markerHeight="10" refX="10" refY="5" orient="auto"><polygon class="tri-marker" points="0,0 11,5 0,10"/></marker>
+          </defs>
+
+          <rect class="node-box" x="180" y="20" width="400" height="170"/>
+          <text class="node-stereo" x="196" y="40">«abstract»</text>
+          <text class="node-title" x="196" y="58">SnakeGame</text>
+          <line class="node-rule" x1="180" y1="68" x2="580" y2="68"/>
+          <text class="node-member" x="196" y="86">performMove(direction) — fixed steps:</text>
+          <text class="node-member" x="206" y="102">1. compute next head</text>
+          <text class="node-member-accent" x="206" y="118">2. handleBoundary(head)  ← hook</text>
+          <text class="node-member" x="206" y="134">3. check self-collision</text>
+          <text class="node-member" x="206" y="150">4. eat food / advance tail</text>
+          <text class="node-member" x="206" y="166">5. notify observers</text>
+
+          <rect class="node-box-accent" x="60" y="250" width="280" height="80"/>
+          <text class="node-title" x="72" y="272">ClassicSnakeGame</text>
+          <line class="node-rule" x1="60" y1="282" x2="340" y2="282" stroke="var(--accent)"/>
+          <text class="node-member-accent" x="72" y="300">handleBoundary:</text>
+          <text class="node-member-accent" x="72" y="316">out of bounds → null (game over)</text>
+
+          <rect class="node-box-accent" x="420" y="250" width="280" height="80"/>
+          <text class="node-title" x="432" y="272">WrapAroundSnakeGame</text>
+          <line class="node-rule" x1="420" y1="282" x2="700" y2="282" stroke="var(--accent)"/>
+          <text class="node-member-accent" x="432" y="300">handleBoundary:</text>
+          <text class="node-member-accent" x="432" y="316">Math.floorMod wraps the coordinate</text>
+
+          <line class="edge-line" x1="200" y1="250" x2="368" y2="198" marker-end="url(#s5-tri)"/>
+          <line class="edge-line" x1="560" y1="250" x2="392" y2="198" marker-end="url(#s5-tri)"/>
+        </svg>
+        <figcaption>Steps 1 and 3–5 never change between variants — only <code>handleBoundary()</code> does, highlighted here the way it's meant to stand out in the actual class: it's the single reason these two subclasses exist at all.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
