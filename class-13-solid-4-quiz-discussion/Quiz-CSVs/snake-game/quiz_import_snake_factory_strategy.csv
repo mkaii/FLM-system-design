@@ -1,0 +1,352 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public abstract class FoodCreator {
+
+    protected abstract FoodItem createFood(Point position);
+
+    public final FoodItem spawnAt(Point position) {
+        return createFood(position);
+    }
+}
+
+public class NormalFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new NormalFood(position); }
+}
+
+public class BonusFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new BonusFood(position); }
+}
+
+There is no if/else and no switch anywhere in this creation code. Given a FoodCreator reference, what decides which kind of FoodItem you get?",A type parameter passed to spawnAt(),"Which subclass the reference actually points at - NormalFoodCreator builds NormalFood, BonusFoodCreator builds BonusFood, and the choice was made when the creator object was chosen","The position, since different cells produce different foods",A static registry inside FoodCreator,,2,"The branching is replaced by object choice. Whoever picked the creator has already made the decision, so no code needs to re-examine it later.",2
+"Real code:
+
+public abstract class FoodCreator {
+
+    protected abstract FoodItem createFood(Point position);
+
+    public final FoodItem spawnAt(Point position) {
+        return createFood(position);
+    }
+}
+
+public class NormalFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new NormalFood(position); }
+}
+
+public class BonusFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new BonusFood(position); }
+}
+
+spawnAt() is declared final and simply calls createFood(). Why make a one-line method final rather than letting subclasses override it?",To make it run faster,"It fixes the public entry point so subclasses can only change HOW the item is built, not what happens around the building - the same parent-controls-the-shape idea used by performMove() and handleBoundary()",Because createFood() is protected,Because Java requires public methods in abstract classes to be final,,2,"It is a miniature of the template method used elsewhere in this project: a fixed public step calling a replaceable internal one. Right now it wraps nothing extra, but that is where shared pre- or post-work would go.",2
+"Real code:
+
+public abstract class FoodItem {
+    private final Point position;
+    private final int points;
+
+    protected FoodItem(Point position, int points) {
+        this.position = position;
+        this.points = points;
+    }
+}
+
+public class NormalFood extends FoodItem {
+    private static final int POINTS = 1;
+    public NormalFood(Point position) { super(position, POINTS); }
+}
+
+public class BonusFood extends FoodItem {
+    private static final int POINTS = 3;
+    public BonusFood(Point position) { super(position, POINTS); }
+}
+
+public abstract class FoodCreator {
+
+    protected abstract FoodItem createFood(Point position);
+
+    public final FoodItem spawnAt(Point position) {
+        return createFood(position);
+    }
+}
+
+public class NormalFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new NormalFood(position); }
+}
+
+public class BonusFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new BonusFood(position); }
+}
+
+Adding SuperFood (worth 5) required SuperFood and SuperFoodCreator. Which existing files had to be edited?","FoodItem and FoodCreator, to register the new type","None. Both new classes plug into the existing abstract classes, and NormalFood, BonusFood, their creators and SnakeGame were all untouched","SnakeGame, to add the new points value","IFoodSpawnStrategy, to add a new method",,2,"Two parallel hierarchies, one new leaf in each. This is the measurable version of 'a new food kind must be addable in isolation' from the requirements.",1
+"Real code:
+
+public interface IFoodSpawnStrategy {
+    FoodCreator nextFoodCreator();
+}
+
+public class RandomFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private static final double BONUS_PROBABILITY = 0.2;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        return random.nextDouble() < BONUS_PROBABILITY ? bonusCreator : normalCreator;
+    }
+}
+
+public class BonusEveryNFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private final int n;
+    private int spawnCount = 0;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        spawnCount++;
+        return spawnCount % n == 0 ? bonusCreator : normalCreator;
+    }
+}
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+The strategy answers 'which kind of food comes next' and the creator answers 'how that kind is built'. Why keep these as two separate abstractions instead of one?",They should be one - splitting them is over-engineering,They change for different reasons. Adding a food type adds a creator without touching any strategy; changing how often bonus food appears changes a strategy without touching any food type,Because Java interfaces cannot construct objects,Because the strategy must be an interface and the creator must be a class,,2,Two independent axes of variation. Combining them would mean every new food type had to be added to every existing spawn rule.,2
+"Real code:
+
+public interface IFoodSpawnStrategy {
+    FoodCreator nextFoodCreator();
+}
+
+public class RandomFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private static final double BONUS_PROBABILITY = 0.2;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        return random.nextDouble() < BONUS_PROBABILITY ? bonusCreator : normalCreator;
+    }
+}
+
+public class BonusEveryNFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private final int n;
+    private int spawnCount = 0;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        spawnCount++;
+        return spawnCount % n == 0 ? bonusCreator : normalCreator;
+    }
+}
+
+Compare the two strategies. One consults a random number; the other keeps a spawnCount field and increments it. What difference does that make when the same strategy object is reused for a second game?",No difference - both behave identically on a new game,"The counting strategy carries its count into the second game, so the second game starts mid-cycle rather than at the beginning. The random one has no such carry-over from the count, though a shared Random continues its sequence too",The counting strategy resets automatically when a new game is constructed,"Neither can be reused, because both are stateless",,2,"Verified by calling one shared strategy four times: Normal, Bonus, Super, Normal. Whatever a previous game consumed, the next game inherits, which is exactly the state leak the requirements forbid between games.",2
+"Real code:
+
+public interface IFoodSpawnStrategy {
+    FoodCreator nextFoodCreator();
+}
+
+public class RandomFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private static final double BONUS_PROBABILITY = 0.2;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        return random.nextDouble() < BONUS_PROBABILITY ? bonusCreator : normalCreator;
+    }
+}
+
+public class BonusEveryNFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private final int n;
+    private int spawnCount = 0;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        spawnCount++;
+        return spawnCount % n == 0 ? bonusCreator : normalCreator;
+    }
+}
+
+Following on: nothing in the code stops someone reusing one strategy instance across two games. What would prevent this mistake?",Making nextFoodCreator() static,"Either give the strategy a reset() the game calls at construction, or have SnakeGame take a factory that produces a fresh strategy per game - anything that makes 'fresh per game' the default rather than a rule to remember",Making spawnCount volatile,Nothing can prevent it; callers must simply be careful,,2,"The demo builds a new strategy per game, so the bug never appears - which is exactly what makes it dangerous. A convention that only works while everyone remembers it is not a safeguard.",2
+"Real code:
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+Trace this method. Which part chooses WHERE the food goes, and which part chooses WHAT it is?",The strategy chooses both position and type,"The do/while loop picks the position - a random free cell, chosen by SnakeGame itself - and only the type is delegated, to the strategy and then the creator",The creator chooses the position via spawnAt(),The board chooses the position and the strategy chooses the type,,2,"Worth noticing that position selection was never made swappable. A game wanting food to appear only near the edges would have to modify SnakeGame, because that rule has no seam.",2
+"Real code:
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+Following on: suppose you now want food placement to be configurable - random, or always in the half of the board furthest from the snake. What does the current code force you to do?",Add a new FoodCreator subclass,"Edit SnakeGame itself, because the placement rule is hardcoded in this private method with no interface in front of it - unlike the type rule, which already has IFoodSpawnStrategy",Add a new value to the Direction enum,Nothing - IFoodSpawnStrategy already controls placement,,2,"A good illustration that extensibility is never general: this design is open to new food types and new boundary rules, and closed to new placement rules. Which seams exist is a choice that was made, deliberately or not.",2
+"Real code:
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+The loop rejects any position already occupied by the snake. What game rule does that enforce, and which other piece of code silently depends on it?",It enforces that food is always reachable; nothing else depends on it,"It enforces that food never appears under the snake - and the collision check depends on it, because 'newHead equals the tail' and 'newHead equals the food' can then never both be true at once",It enforces that food is never adjacent to the head,"It enforces the board size limit, which Board depends on",,2,This is why the collision condition could be simplified to drop its eatsFood term. The simplification is only valid while this loop holds - an invariant in one method quietly propping up a line in another.,2
+"Real code:
+
+public abstract class FoodItem {
+    private final Point position;
+    private final int points;
+
+    protected FoodItem(Point position, int points) {
+        this.position = position;
+        this.points = points;
+    }
+}
+
+public class NormalFood extends FoodItem {
+    private static final int POINTS = 1;
+    public NormalFood(Point position) { super(position, POINTS); }
+}
+
+public class BonusFood extends FoodItem {
+    private static final int POINTS = 3;
+    public BonusFood(Point position) { super(position, POINTS); }
+}
+
+Points are fixed per subclass: 1 for NormalFood, 3 for BonusFood, 5 for SuperFood. A designer now wants bonus food worth 3 on easy boards and 6 on hard ones. What does this structure make awkward?",Nothing - a static final can be changed at runtime,"The value is baked into the class rather than supplied to the object, so a second value needs either another subclass or a constructor parameter the creators currently have no way to supply",FoodItem would have to become an interface,The creators would need to be singletons,,2,The creator layer is where this would be fixed - a BonusFoodCreator taking the point value as a constructor argument handles any number of variants with no new food classes.,2
+"Real code:
+
+public interface IFoodSpawnStrategy {
+    FoodCreator nextFoodCreator();
+}
+
+public class RandomFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private static final double BONUS_PROBABILITY = 0.2;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        return random.nextDouble() < BONUS_PROBABILITY ? bonusCreator : normalCreator;
+    }
+}
+
+public class BonusEveryNFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private final int n;
+    private int spawnCount = 0;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        spawnCount++;
+        return spawnCount % n == 0 ? bonusCreator : normalCreator;
+    }
+}
+
+Both strategies build their own creator objects internally, e.g. 'private final FoodCreator bonusCreator = new BonusFoodCreator();'. What does that prevent a caller from doing?",Nothing - the caller never needs to see the creators,"Supplying different creators - for example a strategy that alternates Normal and Super rather than Normal and Bonus would need a new strategy class, even though its selection logic is identical",Reusing the same strategy for two games,Adding new food types at all,,2,The selection rule and the specific creators it picks between are welded together. Passing the creators into the constructor would separate 'every Nth one is special' from 'special means bonus'.,2
+"Real code:
+
+public abstract class FoodCreator {
+
+    protected abstract FoodItem createFood(Point position);
+
+    public final FoodItem spawnAt(Point position) {
+        return createFood(position);
+    }
+}
+
+public class NormalFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new NormalFood(position); }
+}
+
+public class BonusFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new BonusFood(position); }
+}
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+Trace a single food spawn all the way through: strategy.nextFoodCreator() then .spawnAt(position). How many objects are created, and what decision does each step make?",One object; the strategy makes every decision,"One FoodItem. The strategy decides WHICH creator, the creator decides WHICH FoodItem subclass to construct, and SnakeGame had already decided WHERE - three separate decisions made by three different objects",Three objects - one per layer,Two objects - a creator and an item - because the creator is built fresh each time,,2,"The creators are pre-built and reused inside each strategy, so only the FoodItem is new. Tracing which object makes which decision is the clearest way to see why the layers exist.",2
+"Real code:
+
+public interface IFoodSpawnStrategy {
+    FoodCreator nextFoodCreator();
+}
+
+public class RandomFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private static final double BONUS_PROBABILITY = 0.2;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        return random.nextDouble() < BONUS_PROBABILITY ? bonusCreator : normalCreator;
+    }
+}
+
+public class BonusEveryNFoodSpawnStrategy implements IFoodSpawnStrategy {
+    private final int n;
+    private int spawnCount = 0;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        spawnCount++;
+        return spawnCount % n == 0 ? bonusCreator : normalCreator;
+    }
+}
+
+RandomFoodSpawnStrategy uses a 20% bonus probability, meaning food type is not deterministic. What does that make harder, and how does the project work around it?",Nothing - randomness has no effect on anything,"It makes runs non-reproducible, so the demos pass a seeded Random such as new Random(42) - producing the same sequence every time and making the printed output something you can actually assert against","It makes the game unfair, so the seed is used to remove randomness entirely",It prevents the strategy from being swapped at runtime,,2,Seeding is what let the recorded run be checked line by line. Randomness taken from an injected Random rather than a global one is what makes that possible.,2
+"Real code:
+
+public abstract class FoodCreator {
+
+    protected abstract FoodItem createFood(Point position);
+
+    public final FoodItem spawnAt(Point position) {
+        return createFood(position);
+    }
+}
+
+public class NormalFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new NormalFood(position); }
+}
+
+public class BonusFoodCreator extends FoodCreator {
+    @Override
+    protected FoodItem createFood(Point position) { return new BonusFood(position); }
+}
+
+// From the PARKING LOT project (class-29)
+public class SpotFactory {
+    private static final Map<SpotSize, ISpot> strategies = new HashMap<>();
+
+    static {
+        strategies.put(SpotSize.COMPACT, new CompactSpot());
+        ...
+    }
+
+    public ISpot getSpot(SpotSize spotSize) {
+        return strategies.get(spotSize);
+    }
+}
+
+The parking lot cached one pre-built object per kind and handed the same instance to every caller, which was a bug. The snake's creators build a new FoodItem on every call. Why is the difference correct in both directions?",The parking lot version was fine; the real bug was elsewhere,"A FoodItem holds a position, so two foods must be different objects. A parking spot holds occupancy, so sharing one made every compact spot the same spot. Both are stateful, which is exactly why neither should be cached",Because food is created more often than spots,Because FoodCreator is abstract and SpotFactory is concrete,,2,"Same rule reached from the snake side: cache stateless objects freely, never cache stateful ones. The creators themselves ARE cached inside each strategy, and that is fine because they hold nothing.",2

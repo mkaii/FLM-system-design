@@ -1,0 +1,377 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+SpecialCardPayment extends CardPayment rather than implementing IPaymentStrategy directly. What does the call to super.process(amountTendered) actually reuse?",Nothing - super.process() returns the amount unchanged in all cases,"CardPayment's 5.00 minimum check, including the exception it throws - so a special card automatically enforces the same minimum without that rule being written twice",The PaymentMethod enum lookup,The change reserve behaviour,,2,"This is the practical reason for extends rather than implements: a special card genuinely IS a card and should obey every card rule, plus one extra of its own.",1
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+A customer pays with a special card and inserts 8.00. Work through both methods: what value is finally credited toward the purchase?",8.00 - the surcharge is charged separately to the customer's bank,"7.75 - super.process(8.00) passes the minimum check and returns 8.00, then the 0.25 surcharge is subtracted",8.25 - the surcharge is added to the amount tendered,5.00 - the amount is capped at the card minimum,,2,"The subclass runs the parent's rule first, then applies its own adjustment to the parent's result. That ordering is what makes the two rules compose instead of conflict.",1
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+Now the customer inserts 4.99 with a special card. What happens, and does the 0.25 surcharge get applied?",4.74 is credited - the surcharge is applied and the minimum is ignored for special cards,"super.process(4.99) throws InvalidPaymentException for being under the 5.00 minimum, so the surcharge line never runs at all",4.99 is credited unchanged because the surcharge only applies above the minimum,0.0 is credited and the machine waits for more money,,2,"Because the inherited check runs first and throws, the subclass's own logic is simply never reached. Calling super first is what gives the parent the chance to veto.",2
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+public class CashBackDecorator extends PaymentDecorator {
+
+    private static final double CASH_BACK = 0.75;
+
+    public CashBackDecorator(IPaymentStrategy wrapped) {
+        super(wrapped);
+    }
+
+    @Override
+    public double process(double amount) {
+        return wrapped.process(amount) + CASH_BACK;
+    }
+}
+
+CashBackDecorator exists in the project and compiles. Search the SPECIAL branch of the factory above, and every other line of the project, for where it is constructed. When does a customer actually receive cashback today?",On every special card purchase,"Never. Nothing anywhere calls 'new CashBackDecorator(...)' - the factory hands back a bare SpecialCardPayment, so the class is written but completely unused",Only when the purchase is over 5.00,Only on the second and later purchases,,2,The decorator was built but never wired in. It is dead code: deleting it today would change nothing about how the program behaves.,2
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+public class CashBackDecorator extends PaymentDecorator {
+
+    private static final double CASH_BACK = 0.75;
+
+    public CashBackDecorator(IPaymentStrategy wrapped) {
+        super(wrapped);
+    }
+
+    @Override
+    public double process(double amount) {
+        return wrapped.process(amount) + CASH_BACK;
+    }
+}
+
+What is the smallest change that makes the cashback actually apply to special card purchases?",Add a boolean cashbackEnabled field to SpecialCardPayment,Change the SPECIAL branch to 'return new CashBackDecorator(new SpecialCardPayment());' so the factory hands back the wrapped object instead of the bare one,Make CashBackDecorator implement IPaymentStrategy directly instead of extending PaymentDecorator,Add CASHBACK as a new value in the PaymentMethod enum,,2,"The wiring point is the factory, because that is the one place that decides which object the facade ends up holding. Nothing else in the system has to know a decorator was involved.",1
+"Real code:
+
+public interface IPaymentStrategy {
+
+    double process(double amount);
+
+    default boolean doesAffectChangeReserve() {
+        return false;
+    }
+}
+
+public abstract class PaymentDecorator implements IPaymentStrategy {
+
+    protected final IPaymentStrategy wrapped;
+
+    protected PaymentDecorator(IPaymentStrategy wrapped) {
+        this.wrapped = wrapped;
+    }
+}
+
+PaymentDecorator declares that it implements IPaymentStrategy but contains no process() method at all. Why does this compile?",Because IPaymentStrategy's process() has a default implementation,"Because the class is abstract - an abstract class may leave interface methods unimplemented and pass the obligation to its concrete subclasses, which is why CashBackDecorator must provide process()",Because the wrapped field satisfies the interface automatically,Because process() is inherited from Object,,2,"Only doesAffectChangeReserve() has a default; process() does not. The abstract keyword is what allows the gap, and CashBackDecorator is what fills it.",2
+"Real code:
+
+public interface IPaymentStrategy {
+
+    double process(double amount);
+
+    default boolean doesAffectChangeReserve() {
+        return false;
+    }
+}
+
+public abstract class PaymentDecorator implements IPaymentStrategy {
+
+    protected final IPaymentStrategy wrapped;
+
+    protected PaymentDecorator(IPaymentStrategy wrapped) {
+        this.wrapped = wrapped;
+    }
+}
+
+// CashPayment - the only type that returns true
+@Override
+public boolean doesAffectChangeReserve() {
+    return true;
+}
+
+PaymentDecorator forwards nothing - it holds the wrapped object but overrides neither method. Suppose someone wraps a CashPayment: new CashBackDecorator(new CashPayment()). What does doesAffectChangeReserve() return on that wrapper?",true - it is forwarded to the wrapped CashPayment,"false - the wrapper has no override of its own, so it picks up the interface's default and the wrapped CashPayment's 'true' is silently lost","It throws, because the decorator does not implement the method","true, because the default in the interface is true",,2,"A decorator must forward everything it does not deliberately change. Because this one forwards nothing, wrapping a cash payment would stop the coin reserve being updated - money would go missing with no error anywhere.",2
+"Real code:
+
+public abstract class PaymentDecorator implements IPaymentStrategy {
+
+    protected final IPaymentStrategy wrapped;
+
+    protected PaymentDecorator(IPaymentStrategy wrapped) {
+        this.wrapped = wrapped;
+    }
+}
+
+Following on from the lost cash behaviour: what should be added to PaymentDecorator to fix it for every current and future decorator at once?",Override doesAffectChangeReserve() in CashBackDecorator to return true,Override doesAffectChangeReserve() in PaymentDecorator itself to 'return wrapped.doesAffectChangeReserve();' so every subclass inherits correct forwarding unless it deliberately changes it,Remove doesAffectChangeReserve() from the interface,Make PaymentDecorator implement CashPayment instead,,2,Putting the forwarding in the abstract base is the whole reason that base exists. Fixing it in one concrete decorator would leave the next one anybody writes with the same bug.,2
+"Real code:
+
+public class CashBackDecorator extends PaymentDecorator {
+
+    private static final double CASH_BACK = 0.75;
+
+    public CashBackDecorator(IPaymentStrategy wrapped) {
+        super(wrapped);
+    }
+
+    @Override
+    public double process(double amount) {
+        return wrapped.process(amount) + CASH_BACK;
+    }
+}
+
+process() calls wrapped.process(amount) first and then adds CASH_BACK. Suppose it were rewritten as 'return wrapped.process(amount + CASH_BACK);' instead. Using a special card and a tender of 4.50, what would change?",Nothing - addition is commutative so the result is identical,"The inherited 5.00 card minimum would now see 5.25 instead of 4.50 and would pass, so a payment that should have been rejected would be accepted using the cashback to top itself up",The customer would be credited 0.75 less,It would not compile,,2,Whether you decorate before or after delegating decides which value the wrapped object's rules get to inspect. Here the difference is between a rejected payment and an accepted one.,2
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+public class CashBackDecorator extends PaymentDecorator {
+
+    private static final double CASH_BACK = 0.75;
+
+    public CashBackDecorator(IPaymentStrategy wrapped) {
+        super(wrapped);
+    }
+
+    @Override
+    public double process(double amount) {
+        return wrapped.process(amount) + CASH_BACK;
+    }
+}
+
+Cashback could have been written as a fourth class, SpecialCardWithCashbackPayment extends SpecialCardPayment, instead of as a decorator. Both would work today. What does the decorator give you that the subclass would not?",Better performance at runtime,"Combinability: a second effect can wrap the first one at runtime, whereas subclassing would need a new class for every combination of effects and a class can only extend one parent","Type safety, which subclassing lacks",The ability to change the card minimum,,2,"The same reasoning as the class-24 payment example. With one effect, the subclass is genuinely simpler. The decorator earns its place from the second effect onward, and from effects that switch on and off at runtime.",2
+"Real code:
+
+public abstract class PaymentDecorator implements IPaymentStrategy {
+
+    protected final IPaymentStrategy wrapped;
+
+    protected PaymentDecorator(IPaymentStrategy wrapped) {
+        this.wrapped = wrapped;
+    }
+}
+
+public class CashBackDecorator extends PaymentDecorator {
+
+    private static final double CASH_BACK = 0.75;
+
+    public CashBackDecorator(IPaymentStrategy wrapped) {
+        super(wrapped);
+    }
+
+    @Override
+    public double process(double amount) {
+        return wrapped.process(amount) + CASH_BACK;
+    }
+}
+
+Given the decorator holds an IPaymentStrategy rather than a SpecialCardPayment, what can CashBackDecorator legally wrap?","Only SpecialCardPayment, because that is what the factory uses","Any IPaymentStrategy at all - cash, card, UPI, special card, or even another decorator, since the field's type is the interface rather than a concrete class",Only classes that extend PaymentDecorator,Only classes in the payment package,,2,"Depending on the interface is what allows nesting, e.g. new CashBackDecorator(new SomeOtherDecorator(new SpecialCardPayment())). If the field were typed SpecialCardPayment, none of that would be possible.",2
+"Real code:
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public interface IPaymentStrategy {
+
+    double process(double amount);
+
+    default boolean doesAffectChangeReserve() {
+        return false;
+    }
+}
+
+Neither SpecialCardPayment nor CardPayment overrides doesAffectChangeReserve(). What does a special card purchase therefore report, and is that correct given that card money settles into the merchant's bank rather than the machine's coin box?","true, and that is correct because a card is a form of payment the machine receives","false, inherited from the interface default - which is correct, because no physical coins enter or leave the machine on a card purchase","It throws, because neither class implements the method","false, which is a bug that should be fixed to true",,2,"Sometimes the right answer is that nothing needed to be written. The default already expressed the correct behaviour for every card-like type, which is exactly why the default was chosen to be false.",2
+"Real code:
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+Suppose SpecialCardPayment had been left as an empty class - 'public class SpecialCardPayment extends CardPayment { }' with no surcharge and no overrides. Would wrapping it in CashBackDecorator still demonstrate anything useful?",Yes - the demonstration is identical either way,"Not really. A decorator is meant to change behaviour that already exists; with an empty subclass there is no existing behaviour of its own to modify, so the example only shows addition rather than the wrapping being worth anything","No, because an empty subclass will not compile",Yes - an empty subclass is the clearest possible demonstration,,2,This is why the surcharge was put into SpecialCardPayment first. The decorator's value only becomes visible when there is genuine logic sitting underneath it that you would otherwise have had to open up and edit.,2
+"Real code:
+
+public interface IPaymentStrategy {
+
+    double process(double amount);
+
+    default boolean doesAffectChangeReserve() {
+        return false;
+    }
+}
+
+The doesAffectChangeReserve() method was added to this interface AFTER CashPayment, CardPayment and UPIPayment already existed and worked. Which of these were required as a result? (select all that apply)","Marking the new method 'default' with a body, so existing implementers still compile","An override in CashPayment, the one type whose answer differs from the default",An override in CardPayment,An override in UPIPayment,Converting IPaymentStrategy into an abstract class,"1,2",Adding a plain abstract method would have broken all three implementers at once. The default body is what allowed the interface to grow while only the one type with genuinely different behaviour had to be touched.,2
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public class SpecialCardPayment extends CardPayment {
+
+    private static final double SPECIAL_CARD_SURCHARGE = 0.25;
+
+    @Override
+    public double process(double amountTendered) {
+        double credited = super.process(amountTendered);
+        return credited - SPECIAL_CARD_SURCHARGE;
+    }
+}
+
+Both classes hardcode their numbers: MIN_CARD_AMOUNT = 5.0 and SPECIAL_CARD_SURCHARGE = 0.25. The bank now wants the surcharge configurable per card issuer. What does the current inheritance-based design make awkward about that?",Nothing - a static final field can be changed at runtime,"The value is fixed in the class rather than supplied to the object, so every different surcharge would need either a new subclass or a constructor parameter that the factory has no way to supply today",Subclasses in Java cannot have constructors,It would require deleting CardPayment,,2,"This is where the decorator route quietly wins: a decorator taking the rate as a constructor argument handles any number of surcharge values with one class, while subclassing pushes you toward one class per value.",2

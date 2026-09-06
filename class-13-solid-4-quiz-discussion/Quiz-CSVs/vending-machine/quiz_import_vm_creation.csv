@@ -1,0 +1,305 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public class SpotFactory {
+
+    private static final Map<SpotSize, ISpot> strategies = new HashMap<>();
+
+    static {
+        strategies.put(SpotSize.COMPACT, new CompactSpot());
+        strategies.put(SpotSize.LARGE,   new LargeSpot());
+        strategies.put(SpotSize.HEAVY,   new HeavySpot());
+    }
+
+    public ISpot getSpot(SpotSize spotSize) {
+        return strategies.get(spotSize);
+    }
+}
+
+This is the parking lot's spot factory from class-29. Its map is filled once, in a static block, when the class first loads. If a caller does:
+
+    ISpot a = spotFactory.getSpot(SpotSize.COMPACT);
+    ISpot b = spotFactory.getSpot(SpotSize.COMPACT);
+
+what is the relationship between a and b?",a and b are two separate CompactSpot objects with identical values,"a and b are the exact same object - getSpot() returns the one CompactSpot that was created in the static block, every single time","b is a copy of a, so changing one does not affect the other","b is null, because the entry was consumed by the first call",,2,"Verified by running it: (a == b) prints true. The map is a fixed lookup table of three pre-built objects, so the method hands out references to the same three objects forever.",2
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public class SpotFactory {
+
+    private static final Map<SpotSize, ISpot> strategies = new HashMap<>();
+
+    static {
+        strategies.put(SpotSize.COMPACT, new CompactSpot());
+        strategies.put(SpotSize.LARGE,   new LargeSpot());
+        strategies.put(SpotSize.HEAVY,   new HeavySpot());
+    }
+
+    public ISpot getSpot(SpotSize spotSize) {
+        return strategies.get(spotSize);
+    }
+}
+
+// Main.java of the parking lot project
+groundFloor.addSpot(spotFactory.getSpot(SpotSize.COMPACT));
+groundFloor.addSpot(spotFactory.getSpot(SpotSize.COMPACT));
+groundFloor.addSpot(spotFactory.getSpot(SpotSize.LARGE));
+groundFloor.addSpot(spotFactory.getSpot(SpotSize.HEAVY));
+
+The floor now holds 4 entries and reports availableSpots() == 4. One car parks in a compact spot. Running this, availableSpots() then reports 2, not 3. Why?",The car occupied two spots because it was too large for one,"Both compact entries in the list are the same object, so marking it occupied makes both entries report occupied at once",availableSpots() has an off-by-one error in its loop,The LARGE spot was also reserved for the car,,2,"Measured output: 'two COMPACT calls same object? true', then availableSpots() drops 4 -> 2 after a single assign(). The building believes it lost two parking spaces because it only ever had one compact object pretending to be two.",2
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public class SpotFactory {
+
+    private static final Map<SpotSize, ISpot> strategies = new HashMap<>();
+
+    static {
+        strategies.put(SpotSize.COMPACT, new CompactSpot());
+        strategies.put(SpotSize.LARGE,   new LargeSpot());
+        strategies.put(SpotSize.HEAVY,   new HeavySpot());
+    }
+
+    public ISpot getSpot(SpotSize spotSize) {
+        return strategies.get(spotSize);
+    }
+}
+
+What is the smallest change to getSpot() that fixes the shared-object problem?",Make the map non-static,"Build and return a new spot on each call, e.g. a switch that does 'return new CompactSpot();' - so every caller gets its own object",Add the synchronized keyword to getSpot(),Change the map to store SpotSize keys as Strings,,2,"The map itself was the problem, not where it lived. A factory whose job is to produce independent objects must actually construct them; a fixed lookup table of pre-built instances is a registry, which is a different thing.",2
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public class SpotFactory {
+
+    private static final Map<SpotSize, ISpot> strategies = new HashMap<>();
+
+    static {
+        strategies.put(SpotSize.COMPACT, new CompactSpot());
+        strategies.put(SpotSize.LARGE,   new LargeSpot());
+        strategies.put(SpotSize.HEAVY,   new HeavySpot());
+    }
+
+    public ISpot getSpot(SpotSize spotSize) {
+        return strategies.get(spotSize);
+    }
+}
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+The spot factory caches one instance per kind. The payment factory builds a new object on every call. Both are 'factories'. What actually decides which approach is correct?",Caching is always faster and therefore always preferable,"Whether the produced objects carry state. A parking spot remembers whether it is occupied, so sharing one is a bug. The payment classes hold only final constants and remember nothing between calls, so sharing them would have been harmless",Whether the factory method is static or not,Whether the objects implement an interface or extend an abstract class,,2,"This is the transferable rule from the two projects side by side: cache stateless objects freely, never cache stateful ones. The vending machine got away with 'new' every time because there is nothing to get wrong.",2
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+Look carefully at the final else. A new value, WALLET, is added to the PaymentMethod enum, and a developer forgets to add a matching branch here. What happens when a customer pays by wallet?","A compile error, so the mistake is caught immediately","It silently falls into the final else and is processed as a UPI payment, quietly deducting UPI's 0.10 fee - with no error anywhere",getStrategy returns null and the facade throws NullPointerException,An IllegalArgumentException is thrown naming the unhandled method,,2,"A catch-all else turns 'I forgot a case' into 'I chose UPI'. Nothing in the code, and nothing in the output, indicates the wallet branch is missing.",2
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+Following on from the missing-branch problem: which change would make that mistake impossible to miss?",Rename the else branch to something clearer,"Give UPI its own explicit branch and make the final else throw, e.g. IllegalArgumentException(""unsupported payment method: "" + method) - so an unmapped enum value fails loudly instead of impersonating UPI",Move the factory into the same package as PaymentMethod,Make getStrategy static,,2,Same principle the state classes already follow: an unhandled case must announce itself. A default branch that quietly returns a real working object is the worst of both worlds.,1
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+// From class-22, the game example
+public abstract class Level {
+    protected abstract IEnemy createEnemy();
+}
+
+public class ForestLevel extends Level {
+    @Override
+    protected IEnemy createEnemy() { return new Goblin(); }
+}
+
+Both of these produce objects, but they are structurally different. What is the structural difference?",There is none - the two are the same approach written differently,"The payment factory is one concrete class deciding among all the types with if/else. The Level version has no if/else at all: each subclass supplies its own creation method, so the choice is made by which subclass you are holding",The Level version can only create one type of object in total,The payment factory cannot be used with interfaces,,2,"Both are legitimate. The if/else version keeps all the choices visible in one file, which is easier to read; the subclass version removes the branching entirely but only works when the caller already holds the right subclass.",2
+"Real code:
+
+public class VendingMachine {
+
+    private static VendingMachine instance;
+
+    private VendingMachine() {
+        slots = new ArrayList<>();
+        changeService = new ChangeService(0);
+    }
+
+    public static VendingMachine getInstance() {
+        if (instance == null)
+            instance = new VendingMachine();
+        return instance;
+    }
+}
+
+getInstance() takes no arguments, and the private constructor always builds the machine with ChangeService(0) - an empty change reserve. What does Main have to do as a result?",Pass the starting float into getInstance(),"Configure the machine after getting it, by calling machine.receiveCash(50.0) and machine.addSlot(...) separately - the object cannot be created ready-to-use",Subclass VendingMachine to provide the starting float,Nothing - the machine defaults to a sensible starting float,,2,"A global no-argument accessor cannot take construction parameters, because the second caller's arguments would have nowhere to go. Setup therefore has to happen in separate calls after the fact, which is why Main configures the machine before using the facade.",2
+"Real code:
+
+public class VendingMachine {
+
+    private static VendingMachine instance;
+
+    private VendingMachine() {
+        slots = new ArrayList<>();
+        changeService = new ChangeService(0);
+    }
+
+    public static VendingMachine getInstance() {
+        if (instance == null)
+            instance = new VendingMachine();
+        return instance;
+    }
+}
+
+public VendingMachineFacade(TransactionManager transactionManager) {
+    this.machine = VendingMachine.getInstance();
+    this.paymentStrategyFactory = new PaymentStrategyFactory();
+    this.transactionManager = transactionManager;
+}
+
+A shopping centre operator now wants two vending machines running in the same program, each with its own slots and its own change reserve. What in this code blocks that?",Nothing - creating a second facade creates a second machine,"getInstance() only ever returns one object, and the facade reaches for it directly instead of being handed a machine, so every facade in the program is wired to the same single machine",The Slot class cannot belong to two machines,TransactionManager would need to be a singleton as well,,2,"Two separate problems stacked: the singleton means only one machine exists, and the facade fetching it itself means you could not point a facade at a different machine even if a second one existed. Taking VendingMachine as a constructor parameter would fix the second half.",2
+"Real code:
+
+public VendingMachineFacade(TransactionManager transactionManager) {
+    this.machine = VendingMachine.getInstance();
+    ...
+}
+
+You want to write an automated test that checks 'buying the last Chips leaves the machine unable to serve anyone'. Why is that awkward with the code as written?",Tests cannot call methods on a facade,"The single machine survives between tests - one test's slots, change reserve and current condition are still there for the next test, and there is no way to hand the facade a clean machine",The facade constructor is private,VendingMachine has no getters to assert against,,2,"Shared global state and test isolation pull in opposite directions. This is usually the first practical cost of a singleton that people actually feel, well before anything to do with how it is constructed.",2
+"Real code:
+
+public static void main(String[] args) {
+    VendingMachine machine = VendingMachine.getInstance();
+
+    machine.addSlot(new Slot(""A1"", ""Chips"", 2.50, 3));
+    machine.addSlot(new Slot(""A2"", ""Soda"", 1.75, 2));
+    machine.addSlot(new Slot(""A3"", ""Candy Bar"", 6.00, 1));
+    machine.receiveCash(50.0);
+
+    TransactionManager transactionManager = new TransactionManager();
+    VendingMachineFacade facade = new VendingMachineFacade(transactionManager);
+
+    facade.selectProduct(""A1"");
+    printIfCompleted(facade, facade.insertPayment(3.00, PaymentMethod.CASH));
+    ...
+}
+
+Main obtains the machine and calls addSlot() and receiveCash() on it directly, then creates a facade and uses that for everything else. Does the direct access undermine the point of having a facade?",Yes - any direct call to the machine defeats the facade entirely,"Mostly not: stocking the machine and loading its float are technician actions, not customer actions, so they are outside what the facade is for. It would still be cleaner to expose them through a separate admin entry point rather than reaching into the machine",No - Main is allowed to do anything because it is the entry point,Yes - and the code would not compile if the facade were used correctly,,2,"The facade covers the customer-facing flow. The honest criticism is not that setup bypasses it, but that there is no equivalent front door for the technician-facing flow, so setup ends up reaching straight into internals.",2
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+Adding the SPECIAL payment type in class-34 required editing this method to add a branch. Adding a payment type was supposed to mean writing new code rather than changing existing code. Is this a contradiction?",Yes - the design failed and the factory should be deleted,"Partly. The three existing payment classes and the facade were untouched, which was the main goal, but the factory itself is a known single point that must be edited for every new type - the accepted cost of choosing something this simple",No - editing a factory does not count as changing existing code under any circumstances,Yes - and the only fix is to make every payment type a singleton,,2,Being precise matters more than being absolute here. The rule bought you a great deal (nothing that already worked had to be reopened) and cost you one line in one known place.,2
+"Real code:
+
+public class PaymentStrategyFactory {
+
+    public IPaymentStrategy getStrategy(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) {
+            return new CashPayment();
+        } else if (method == PaymentMethod.CARD) {
+            return new CardPayment();
+        }
+        else if (method == PaymentMethod.SPECIAL) {
+            return new SpecialCardPayment();
+        }
+        else {
+            return new UPIPayment();
+        }
+    }
+}
+
+An alternative is a registry: a Map<PaymentMethod, Supplier<IPaymentStrategy>> that each payment type registers itself into, with getStrategy() just looking up and calling the supplier. What does that actually buy, and what does it cost?",It buys nothing and costs nothing - it is the same code rearranged,"It removes the need to edit getStrategy() for each new type, at the cost of the wiring becoming harder to follow: you can no longer see every supported payment type by reading one method",It makes the factory thread-safe automatically,It removes the need for the PaymentMethod enum entirely,,2,"Worth putting to the class as a judgement call rather than a rule. For four payment types the if/else is more readable; for forty, the registry wins clearly.",2
+"Real code:
+
+public class VendingMachine {
+
+    private static VendingMachine instance;
+
+    private VendingMachine() {
+        slots = new ArrayList<>();
+        changeService = new ChangeService(0);
+    }
+
+    public static VendingMachine getInstance() {
+        if (instance == null)
+            instance = new VendingMachine();
+        return instance;
+    }
+}
+
+Setting aside how it is built, why does a single shared VendingMachine instance make sense for this program in the first place?",Because singletons are the recommended default for all service classes,Because the object models one physical machine with one set of slots and one coin reserve - two independent objects claiming to be the same physical machine would each track stock and change separately and immediately disagree,Because it saves memory compared to creating several,"Because the state classes are singletons, so the machine must be too",,2,"The justification has to come from the thing being modelled, not from convenience. It is exactly the same reasoning that made ParkingLot a singleton in the previous project.",1

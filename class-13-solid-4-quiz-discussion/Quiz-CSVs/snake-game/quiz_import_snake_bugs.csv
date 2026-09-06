@@ -1,0 +1,377 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+This loop keeps drawing random cells until it finds one the snake is not on. On a 2x1 board, a snake occupying one cell eats the food in the other. Running exactly that: the program printed 'food at (0,1), now eating it...' and then never returned. What happened?",The snake grew too large and overflowed the Deque,"Every cell is now occupied, so the do/while can never find a free position and spins forever - the game hangs instead of ending",spawnFood() threw an exception that was swallowed,The random number generator ran out of values,,2,"Verified by running it with a four-second timeout: still spinning. Filling the board is normally a WIN, but this design has no concept of one, so the success case is an infinite loop.",2
+"Real code:
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+Following on from the hang: what would fix it properly?","Add a counter and give up after 1000 attempts, leaving the food where it is","Check whether any free cell exists before drawing - if the snake fills the board, end the game as a win instead of searching for a position that cannot exist",Make the loop a while loop instead of a do/while,Catch the exception thrown when the board is full,,2,"A retry cap turns a hang into a different bug. The real gap is that 'board full' is a legitimate end state the design never modelled, so there is nothing sensible for the loop to fall back on.",2
+"Real code:
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+Setting the full-board case aside, this loop also gets slower as the snake grows. Why, and when does it start to matter?",It does not - each attempt is constant time,"Each draw is constant time, but as the snake covers more of the board a larger share of draws land on the snake and are retried - on a nearly-full board it may take many attempts to find the few free cells",Because occupied.contains() gets slower as the Set grows,Because the Random object degrades after many calls,,2,"Fine on a 6x6 board with a short snake, which is why the demos never notice. The cost is in the number of retries, not in any single attempt.",2
+"Real code:
+
+public class CyclingFoodSpawnStrategy implements IFoodSpawnStrategy {
+
+    private final FoodCreator[] cycle = { new NormalFoodCreator(), new BonusFoodCreator(), new SuperFoodCreator() };
+    private int spawnCount = 0;
+
+    @Override
+    public FoodCreator nextFoodCreator() {
+        return cycle[spawnCount++ % cycle.length];
+    }
+}
+
+One instance of this strategy is created and passed to two games in a row. Calling it four times in sequence returned Normal, Bonus, Super, Normal. What does the second game experience?","It starts the cycle from Normal, like the first game","It continues wherever the first game stopped - if the first game ate two foods, the second game's first food is a Super rather than a Normal","It throws, because the array index runs past the end","Both games share food, so they always see the same type",,2,"The requirement says no state may leak between games. spawnCount is exactly that leak, and nothing in the API warns the caller.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+// SnakeGame
+private IScoringRule scoringRule = new BaseScoringRule();
+
+public void setScoringRule(IScoringRule scoringRule) {
+    this.scoringRule = scoringRule;
+}
+
+setScoringRule() is public and can be called at any moment, including mid-game. What can a caller do with it that they almost certainly should not?",Nothing - replacing the rule is always safe,"Replace the whole chain rather than wrapping it, silently discarding any active power-ups; or install a rule mid-move so one move is scored under two different rules",Cause the score to become negative,Change the food type,,2,"The comment above it says 'read-then-wrap is the intended usage', which is a convention rather than a constraint. A method such as addScoringEffect() that wrapped internally would make the wrong usage impossible.",2
+"Real code:
+
+public interface IScoringRule {
+    int pointsFor(FoodItem food);
+    void onMove();
+}
+
+public abstract class ScoringRuleDecorator implements IScoringRule {
+    protected final IScoringRule wrapped;
+
+    @Override
+    public int pointsFor(FoodItem food) { return wrapped.pointsFor(food); }
+
+    @Override
+    public void onMove() { wrapped.onMove(); }
+}
+
+public class DoublePointsDecorator extends ScoringRuleDecorator {
+    private int movesRemaining;
+
+    @Override
+    public int pointsFor(FoodItem food) {
+        int base = super.pointsFor(food);
+        return isActive() ? base * 2 : base;
+    }
+
+    @Override
+    public void onMove() {
+        super.onMove();
+        if (movesRemaining > 0) movesRemaining--;
+    }
+}
+
+A DoublePointsDecorator whose movesRemaining has reached zero still sits in the chain and is still called on every move and every scored food. What is the consequence over a long game with many power-ups?",The score is doubled permanently,"Nothing changes behaviourally, but the chain keeps getting longer - each expired decorator still delegates on every call, and nothing ever removes them",Each expired decorator throws once it reaches zero,The oldest decorator is dropped automatically,,2,"Harmless at this scale and worth naming honestly: layering with no unwrapping path means the structure only grows. A rule that reports itself expired, plus a prune step, would be the fix.",2
+"Real code:
+
+public interface IScoringRule {
+    int pointsFor(FoodItem food);
+    void onMove();
+}
+
+public abstract class ScoringRuleDecorator implements IScoringRule {
+    protected final IScoringRule wrapped;
+
+    @Override
+    public int pointsFor(FoodItem food) { return wrapped.pointsFor(food); }
+
+    @Override
+    public void onMove() { wrapped.onMove(); }
+}
+
+public class DoublePointsDecorator extends ScoringRuleDecorator {
+    private int movesRemaining;
+
+    @Override
+    public int pointsFor(FoodItem food) {
+        int base = super.pointsFor(food);
+        return isActive() ? base * 2 : base;
+    }
+
+    @Override
+    public void onMove() {
+        super.onMove();
+        if (movesRemaining > 0) movesRemaining--;
+    }
+}
+
+// SnakeGame.performMove(), last line
+scoringRule.onMove();
+
+onMove() is called at the very END of performMove(), after any food has been scored. Why does that ordering matter for a power-up lasting exactly one move?",It does not matter - the count would be the same either way,"If it ticked first, a one-move power-up would drop to zero before the food eaten on that same move was scored, so the effect the player just activated would never apply",Ticking first would double-count the move,Ticking last means the power-up lasts one move longer than requested,,2,Off-by-one bugs in timed effects almost always come down to whether the clock advances before or after the thing being timed.,2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+public interface IScoringRule {
+    int pointsFor(FoodItem food);
+    void onMove();
+}
+
+public abstract class ScoringRuleDecorator implements IScoringRule {
+    protected final IScoringRule wrapped;
+
+    @Override
+    public int pointsFor(FoodItem food) { return wrapped.pointsFor(food); }
+
+    @Override
+    public void onMove() { wrapped.onMove(); }
+}
+
+public class DoublePointsDecorator extends ScoringRuleDecorator {
+    private int movesRemaining;
+
+    @Override
+    public int pointsFor(FoodItem food) {
+        int base = super.pointsFor(food);
+        return isActive() ? base * 2 : base;
+    }
+
+    @Override
+    public void onMove() {
+        super.onMove();
+        if (movesRemaining > 0) movesRemaining--;
+    }
+}
+
+onMove() is reached only on the last line of performMove(). Both endGame() paths return before it. Does a move that ends the game count against a power-up's remaining moves?",Yes - endGame() ticks the rule before returning,"No, and it does not matter: once the game is over no further scoring happens, so whether that final move was counted can never be observed","No, and this is a bug that shortchanges the player","Yes, because the tick happens in the state class instead",,2,"Worth practising the distinction between an inconsistency and a defect. This one is unobservable, so it costs nothing - unlike the occupied/body drift, which was equally invisible at the moment it happened but corrupted later moves.",2
+"Real code:
+
+public class DoublePointsDecorator extends ScoringRuleDecorator {
+
+    public DoublePointsDecorator(IScoringRule wrapped, int durationInMoves) {
+        super(wrapped);
+        this.movesRemaining = durationInMoves;
+    }
+}
+
+// how it is applied
+game.setScoringRule(new DoublePointsDecorator(game.getScoringRule(), 12));
+
+In the recorded run this produced scores of 2, 8 and 18 for foods worth 1, 3 and 5, then 19, 22 and 27 for the same three foods afterwards. What do those two groups show?","The power-up doubled the first three foods and then expired, after which the same foods scored their face value",The power-up doubled every food for the whole game,The power-up added a flat 1 point per food,The scores were random because the food order changed,,2,"First three gains are 2, 6 and 10 - exactly double 1, 3 and 5. The next three are 1, 3 and 5. A second game with no power-up produced 1, 4, 9, 10, 13, 18, which is the same food sequence undoubled.",2
+"Real code:
+
+public class ClassicSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        boolean withinBounds = getBoard().isWithinBounds(rawNewHead.getRow(), rawNewHead.getCol());
+        return withinBounds ? rawNewHead : null;   // null -> hitting the wall ends the game
+    }
+}
+
+// requirements.txt section 9
+// A new food kind, a new boundary mode, and a new score listener must each be
+// addable in isolation, not as edits scattered across working code.
+
+Three of the four stretch requirements were met purely by adding files. The power-up was not. What did it need that the others did not?",A new subclass of SnakeGame,"A seam that did not exist yet - scoring was hardcoded as 'score += currentFood.getPoints()' inside performMove(), so SnakeGame had to be edited to introduce IScoringRule before anything could be layered on",A change to the Board class,Nothing - it was also added purely by adding files,,2,"An honest result worth teaching: extension points only exist where somebody put one. Food, boundary and listeners each had a seam already; scoring did not, so the first extension there cost an edit to working code.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+getHead(), getFoodPosition(), getScore() and getLength() are all public, and the greedy bot in Main calls getHead() and getFoodPosition() before every move to decide where to go. What does that make possible that a real player could not do?",Nothing - a player can see the board too,"The bot reads exact positions instantly and never mis-steers, so it dies only from a genuine trap rather than from reaction time - which is what makes the demo runs reproducible",The bot can move two cells per turn,The bot can see through the snake's body,,2,"The reason for pointing this out is that the recorded run is only reproducible because nothing about it is timing-dependent - the seed fixes the food, and the bot's decisions are a pure function of the state.",1
+"Real code:
+
+// Main.java
+private static Direction pickGreedyDirection(Point head, Point food) {
+    if (food.getRow() < head.getRow()) return Direction.UP;
+    if (food.getRow() > head.getRow()) return Direction.DOWN;
+    if (food.getCol() < head.getCol()) return Direction.LEFT;
+    return Direction.RIGHT;
+}
+
+This bot always closes the row gap before the column gap and never considers its own body. In the recorded run it died at length 8 by stepping into a segment it had laid down two moves earlier. Is the bot buggy?",Yes - it should be fixed so the demo runs forever,"No. It is deliberately naive: it exists to drive the demo deterministically, not to play well, and its death is a genuine self-collision that exercises the game-over path",Yes - it should at minimum avoid reversing into itself,"No, because a greedy strategy is provably optimal for snake",,2,Worth separating test scaffolding from the system under test. A smarter bot would make the demo longer without testing anything the current one misses.,1
+"Real code:
+
+public class Board {
+    public boolean isWithinBounds(int row, int col) {
+        return row >= 0 && row < height && col >= 0 && col < width;
+    }
+}
+
+// Board
+public Board(int width, int height) {
+    this.width = width;
+    this.height = height;
+}
+
+// Main
+Board board = new Board(6, 6);
+SnakeGame game = new ClassicSnakeGame(board, new Point(3, 3), spawnStrategy, random);
+
+The Board constructor takes (width, height) while Point takes (row, col) - and rows map to height while columns map to width. What risk does that create, and why has it not bitten yet?",No risk - the compiler catches mismatches,"The two orders are reversed relative to each other, so a non-square board could easily be constructed or indexed the wrong way round. Every demo board is square (6x6, 5x5, 8x8), which hides the mistake completely","No risk, because Board validates its arguments",The risk is that Point should store width and height instead,,2,"Two adjacent int parameters with no type distinction is a classic trap, and square test data is very good at concealing it. A 6x3 board would settle it immediately - as would a Dimension type, or naming the constructor parameters in a builder.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+// SnakeGame
+public Point getHead() { return body.peekFirst(); }
+
+getHead() returns the Point object straight out of the body. Given how Point is written elsewhere in the project, is that a leak like TransactionManager returning its live list?",Yes - the caller could move the snake's head by changing the returned Point,"No. Point's row and col are final with no setters, so the returned object cannot be altered - handing out a reference to an immutable value is safe in a way that handing out a mutable list is not",Yes - any object returned from a getter can be modified,"No, because peekFirst() returns a copy",,2,"The useful contrast with the vending machine's leaked list: what makes returning internals dangerous is mutability, not the act of returning them. Immutable values can be shared freely.",2
+"Across both projects, several defects shared one shape: the parking lot's release() printing a message and returning; the vending machine's cancel() announcing a refund that never moved money; and the snake's occupied Set silently dropping a cell the body still held. What do all three have in common?",All three were caused by missing null checks,"Each one carried on normally after doing nothing or doing only part of the job, so nothing at the moment of failure distinguished it from success - the damage only surfaced later, somewhere else",All three were concurrency problems,All three were caused by inheritance being used incorrectly,,2,"The recurring lesson across the whole term: the expensive bugs are the quiet ones. Throwing, or returning a result the caller must inspect, would have surfaced all three at the point they actually went wrong.",2

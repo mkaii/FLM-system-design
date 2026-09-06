@@ -1,0 +1,409 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+// SnakeGame - the public entry points
+public void move(Direction direction) { state.move(this, direction); }
+public void pause()  { state.pause(this); }
+public void resume() { state.resume(this); }
+
+public void setState(IGameState state) { this.state = state; }
+
+public boolean isOver() { return state == GameOverState.getInstance(); }
+
+These are the only ways the outside world can act on a game, and none of them contains an if/else about whether the game is running, paused or finished. Where does that decision get made?",Nowhere - all three are always allowed,In whichever IGameState object currently sits in the 'state' field: it decides what each call means and whether it is permitted at all,"In Main, which checks isOver() before every call","In the Board, which rejects moves once the game ends",,2,Replacing the object in the 'state' field changes the behaviour of all three entry points at once. That is why none of them needs to branch.,2
+"Real code:
+
+public class RunningState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        game.performMove(direction);
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        game.setState(PausedState.getInstance());
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is already running"");
+    }
+}
+
+public class PausedState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""cannot move while paused"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is already paused"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        game.setState(RunningState.getInstance());
+    }
+}
+
+The game is running normally. Main calls game.pause() and then immediately game.move(Direction.UP). Trace both calls: what happens?",Both succeed; the move is queued and applied when the game resumes,"pause() swaps the state to PausedState, then move() reaches PausedState.move() which throws InvalidMoveException(""cannot move while paused"") - the movement code never runs","pause() throws, because a running game cannot be paused",move() silently does nothing and returns normally,,2,"This is exactly the sequence Main demonstrates and catches. Because PausedState refuses the call rather than ignoring it, the caller cannot mistake a blocked move for a completed one.",1
+"Real code:
+
+public class GameOverState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+}
+
+Every method in GameOverState throws. Compare that with PausedState, where resume() is allowed. What does this difference say about the two conditions?",Nothing - the difference is accidental,"Paused is a temporary condition with a defined way out, so exactly one operation is legal. Game over is terminal, so no operation can be legal - encoding that as three throws makes the finality impossible to bypass",GameOverState should also allow resume() so a player can retry,PausedState should also throw on resume() for consistency,,2,"The requirement said 'over must stay over'. Because there is no non-throwing path out of GameOverState, that rule is enforced by the type rather than by everyone remembering to check isOver() first.",2
+"Real code:
+
+// SnakeGame - the public entry points
+public void move(Direction direction) { state.move(this, direction); }
+public void pause()  { state.pause(this); }
+public void resume() { state.resume(this); }
+
+public void setState(IGameState state) { this.state = state; }
+
+public boolean isOver() { return state == GameOverState.getInstance(); }
+
+public class GameOverState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+}
+
+isOver() compares the current state against GameOverState.getInstance() using ==, not equals(). Why is reference comparison correct here?",It is not correct - equals() should be used and this is a bug,"Because GameOverState is a singleton: exactly one instance exists, so a game is over precisely when its state field points at that one object",Because IGameState does not declare equals(),Because == is faster than equals() for interfaces,,2,"Singleton states make identity comparison meaningful. If states were created with 'new' each time, == would fail and every state class would need its own equals().",2
+"Real code:
+
+public class RunningState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        game.performMove(direction);
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        game.setState(PausedState.getInstance());
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is already running"");
+    }
+}
+
+RunningState.move() does nothing except call game.performMove(direction) - it adds no logic of its own. Is that method therefore pointless?",Yes - RunningState could be deleted and move() could call performMove() directly,"No. Its value is that it is the ONLY state whose move() forwards; the other two throw. Deleting it would mean SnakeGame.move() had to check the condition itself, putting the branching back",Yes - a method that only delegates is always dead weight,"No, because performMove() is private",,2,"A one-line delegation is doing real work when the alternative implementations of that same method do something completely different. The information is in the contrast, not in the body.",2
+"Real code:
+
+public class RunningState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        game.performMove(direction);
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        game.setState(PausedState.getInstance());
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is already running"");
+    }
+}
+
+public class PausedState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""cannot move while paused"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is already paused"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        game.setState(RunningState.getInstance());
+    }
+}
+
+public class GameOverState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+}
+
+All three states are singletons with private constructors and no fields of their own. Suppose a new PausedState needed to remember how many moves had elapsed before the pause. What breaks?",Nothing - the singleton can hold a counter,"Two games sharing the one PausedState instance would share that counter, so pausing one game would corrupt the other's value. The state would have to stop being a singleton, or the counter would have to live on SnakeGame",The private constructor would prevent the field from being initialised,Only the first game created would be able to pause,,2,Field-less states can be shared safely; stateful ones cannot. This directly affects the requirement that a second game must not inherit anything from the first.,2
+"Real code:
+
+private void endGame() {
+    setState(GameOverState.getInstance());
+    notifyGameOver();
+}
+
+endGame() is private and is the only place in SnakeGame that sets GameOverState. What does routing every ending through this one method guarantee?",That the game can only end once,"That the state change and the observer notification can never happen without each other - no future code path can end the game and forget to tell the listeners, or notify listeners without actually ending it",That the score is reset to zero,That endGame() runs faster than two separate calls,,2,"performMove() has two separate ways to finish - a wall and a self-collision. Both call endGame(), so neither can drift out of step with the other.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+performMove() is public, yet the design intends it to be reached only through RunningState. What is the practical risk of that being public, and why was it done anyway?",No risk - public is always safe for game logic,A caller could invoke performMove() directly and bypass the pause and game-over checks entirely. It is public because RunningState lives in a different package (engine.state) and could not otherwise call it,It is public so that Main can display the snake,There is no risk because performMove() checks isOver() internally,,2,"A genuine trade-off forced by the package split. Same shape as VendingMachine.setState() being public - the state classes need access, and Java's package-private visibility cannot express 'only my state classes'.",2
+"Real code:
+
+// SnakeGame - the public entry points
+public void move(Direction direction) { state.move(this, direction); }
+public void pause()  { state.pause(this); }
+public void resume() { state.resume(this); }
+
+public void setState(IGameState state) { this.state = state; }
+
+public boolean isOver() { return state == GameOverState.getInstance(); }
+
+You want to add a REPLAY condition in which move() is ignored but the board can still be read. Which of these are needed? (select all that apply)",A new ReplayState class implementing IGameState,Something that calls game.setState(ReplayState.getInstance()),"Edits to RunningState, PausedState and GameOverState",A new method on the IGameState interface,An if/else added to SnakeGame.move(),"1,2","The three existing states, the interface and the three entry points are untouched. Adding a condition costs one new class plus a way to enter it.",2
+"Real code:
+
+public class RunningState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        game.performMove(direction);
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        game.setState(PausedState.getInstance());
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is already running"");
+    }
+}
+
+public class PausedState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""cannot move while paused"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is already paused"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        game.setState(RunningState.getInstance());
+    }
+}
+
+Suppose the three state classes were replaced by 'private GameStatus status;' - an enum - plus a switch inside move(), pause() and resume(). The program's behaviour today would be identical. What actually gets worse?",Nothing measurable - three conditions in one switch is arguably easier to read at a glance,"Everything Paused does would be split across three different switch statements instead of sitting in one class, and adding a fourth condition means editing three working methods","It would not compile, because Java cannot switch on enums",The game could no longer change condition at runtime,,2,"Worth conceding in class: at three conditions the enum is genuinely readable. The cost appears on the fourth condition, and whenever you want to read one condition's full behaviour in one place.",2
+"Real code:
+
+public class PausedState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""cannot move while paused"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is already paused"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        game.setState(RunningState.getInstance());
+    }
+}
+
+PausedState.pause() throws ""game is already paused"" rather than doing nothing. A caller pausing an already-paused game arguably got what they wanted. Is throwing right here?","Yes, always - repeating any operation must be an error",It is defensible either way. Throwing surfaces a caller who has lost track of the game's condition; doing nothing would treat pause as a request for an end result rather than an action. What matters is that it does not print a message and return as though it worked,"No - it should silently return, and throwing is a bug",No - it should resume the game instead,,2,"Compare with the vending machine, where IdleState.cancel() deliberately does nothing. Both choices are respectable; the failure mode to avoid is the third option of pretending.",2
+"Real code:
+
+// SnakeGame - the public entry points
+public void move(Direction direction) { state.move(this, direction); }
+public void pause()  { state.pause(this); }
+public void resume() { state.resume(this); }
+
+public void setState(IGameState state) { this.state = state; }
+
+public boolean isOver() { return state == GameOverState.getInstance(); }
+
+public class GameOverState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+}
+
+In the real run of Main, the greedy bot ended the game and the next line printed 'expected failure: game is over'. Which call produced that message, and why did it not simply return?",move() returned false and Main printed the message itself,"A call made after the game had ended reached GameOverState, which threw InvalidMoveException - Main catches it and prints the message, so the failure is visible rather than silent",Main checked isOver() and printed the message without calling anything,The board threw an out-of-bounds exception,,2,The observable proof that the terminal condition is enforced: the game did not quietly accept a move on a finished game and pretend nothing was wrong.,1
+"Real code:
+
+protected SnakeGame(Board board, Point startPosition,
+                    IFoodSpawnStrategy foodSpawnStrategy, Random random) {
+    this.board = board;
+    this.foodSpawnStrategy = foodSpawnStrategy;
+    this.random = random;
+    body.addFirst(startPosition);
+    occupied.add(startPosition);
+    this.currentFood = spawnFood();
+}
+
+// SnakeGame - the public entry points
+public void move(Direction direction) { state.move(this, direction); }
+public void pause()  { state.pause(this); }
+public void resume() { state.resume(this); }
+
+public void setState(IGameState state) { this.state = state; }
+
+public boolean isOver() { return state == GameOverState.getInstance(); }
+
+A new SnakeGame begins in RunningState, decided by the field initialiser 'private IGameState state = RunningState.getInstance();'. What would need to change for games to start paused, waiting for the player to press start?",Every state class would need a new startGame() method,"Only the initial value - set the field to PausedState.getInstance() so the first legal call is resume(). No other class changes, because pause and resume already exist",SnakeGame would need a boolean started flag checked in move(),A new StartingState class is unavoidable,,2,A nice demonstration that the conditions already form a complete little machine: changing where you enter it is a one-word change.,1
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+public class GameOverState implements IGameState {
+
+    @Override
+    public void move(SnakeGame game, Direction direction) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void pause(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+
+    @Override
+    public void resume(SnakeGame game) {
+        throw new InvalidMoveException(""game is over"");
+    }
+}
+
+In the recorded run, the snake died on step 29 attempting to move LEFT from (4,4) into (4,3), which its own body occupied. Afterwards getHead() still reported (4,4), not (4,3). Why?",getHead() has an off-by-one error,"The collision was detected before any mutation - performMove() calls endGame() and returns before body.addFirst(newHead) ever runs, so the illegal position is never written into the snake",The head was moved and then rolled back after the collision check,"(4,3) was outside the board so the position was discarded",,2,"The rejected move leaves no trace at all. The snake did not die AT (4,3) - it never went there; the attempt was refused, exactly like a move refused by PausedState.",2

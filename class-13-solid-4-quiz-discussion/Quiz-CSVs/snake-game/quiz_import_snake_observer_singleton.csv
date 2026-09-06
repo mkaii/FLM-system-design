@@ -1,0 +1,282 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public interface IGameObserver {
+    void onScoreChanged(int newScore);
+    void onGameOver(int finalScore);
+}
+
+// SnakeGame
+private final List<IGameObserver> observers = new ArrayList<>();
+
+public void addObserver(IGameObserver observer) { observers.add(observer); }
+
+private void notifyScoreChanged() {
+    for (IGameObserver observer : observers) {
+        observer.onScoreChanged(score);
+    }
+}
+
+notifyScoreChanged() loops over a list and calls the same method on each entry. What does SnakeGame know about who is in that list?","Their concrete types, so it can call the right method on each","Only that each one implements IGameObserver - it does not know how many there are, what they are, or what any of them does with the score",It knows their order of registration matters,It knows at least one must be a ConsoleScoreObserver,,2,"That ignorance is the point. Adding a listener that writes to a file, or a network socket, requires no change here because there is nothing here to change.",2
+"Real code:
+
+public interface IGameObserver {
+    void onScoreChanged(int newScore);
+    void onGameOver(int finalScore);
+}
+
+// SnakeGame
+private final List<IGameObserver> observers = new ArrayList<>();
+
+public void addObserver(IGameObserver observer) { observers.add(observer); }
+
+private void notifyScoreChanged() {
+    for (IGameObserver observer : observers) {
+        observer.onScoreChanged(score);
+    }
+}
+
+// SnakeGame.performMove(), inside the eatsFood branch
+score += scoringRule.pointsFor(currentFood);
+currentFood = spawnFood();
+notifyScoreChanged();
+
+notifyScoreChanged() is called only inside the eatsFood branch, not on every move. What does that mean for a listener?",Listeners are told about every move and must filter out the ones they do not care about,Listeners hear only when the score actually changed - a move that just slides the snake forward produces no notification at all,Listeners are told once per second,Listeners are told only when the game ends,,2,In the recorded run this is why only seven score lines printed across roughly thirty moves. An event stream that fires when nothing changed forces every listener to write the same filtering code.,1
+"Real code:
+
+public class HighScoreObserver implements IGameObserver {
+
+    @Override
+    public void onScoreChanged(int newScore) {
+        // high score only matters once the game ends
+    }
+
+    @Override
+    public void onGameOver(int finalScore) {
+        HighScoreRegistry.getInstance().recordScore(finalScore);
+    }
+}
+
+HighScoreObserver implements onScoreChanged() with an empty body and a comment. Is an empty implementation a code smell here?",Yes - it means the interface is wrong and should be split,"It is a mild one. This listener only cares about one of the two events, so the interface is slightly wider than it needs. Splitting it would remove the empty method but double the number of interfaces to register against",No - empty methods are always fine,Yes - it should throw UnsupportedOperationException instead,,2,"Worth putting to the class as a trade-off rather than a verdict. With two events an empty method is cheap; with eight, listeners implementing seven empty bodies would be a real signal to split.",2
+"Real code:
+
+public interface IGameObserver {
+    void onScoreChanged(int newScore);
+    void onGameOver(int finalScore);
+}
+
+// SnakeGame
+private final List<IGameObserver> observers = new ArrayList<>();
+
+public void addObserver(IGameObserver observer) { observers.add(observer); }
+
+private void notifyScoreChanged() {
+    for (IGameObserver observer : observers) {
+        observer.onScoreChanged(score);
+    }
+}
+
+public class HighScoreObserver implements IGameObserver {
+
+    @Override
+    public void onScoreChanged(int newScore) {
+        // high score only matters once the game ends
+    }
+
+    @Override
+    public void onGameOver(int finalScore) {
+        HighScoreRegistry.getInstance().recordScore(finalScore);
+    }
+}
+
+public class ConsoleScoreObserver implements IGameObserver {
+    @Override
+    public void onScoreChanged(int newScore) {
+        System.out.println(""score: "" + newScore);
+    }
+}
+
+Both listeners are registered on the same game and both receive every event. How much does each know about the other?",Each holds a reference to the other so they can coordinate,"Nothing at all - neither can see the other, and removing either one would have no effect on the remaining one's behaviour",The console listener must be registered first or the high score will be wrong,They share state through HighScoreRegistry,,2,"Independence is the practical test of whether this is really working. If the printing listener had to be present for the high score to record correctly, they would not be independent at all.",2
+"Real code:
+
+public class HighScoreRegistry {
+
+    private static final HighScoreRegistry INSTANCE = new HighScoreRegistry();
+
+    private int highScore = 0;
+
+    private HighScoreRegistry() { }
+
+    public static HighScoreRegistry getInstance() { return INSTANCE; }
+
+    public void recordScore(int score) {
+        if (score > highScore) {
+            highScore = score;
+        }
+    }
+}
+
+The instance is created in a static final field rather than lazily inside getInstance() with a null check. What does that change?",Nothing - both approaches behave identically in every respect,"The object is created once when the class first loads, so getInstance() is only a return with no branch - it cannot ever construct a second one or be caught halfway through constructing the first",It means the registry can be garbage collected between calls,It allows getInstance() to take constructor arguments,,2,"Deliberately different from VendingMachine.getInstance(), which uses the lazy null check that class-30's notes had already flagged. Same pattern, tightened after the lesson.",2
+"Real code:
+
+public class HighScoreRegistry {
+
+    private static final HighScoreRegistry INSTANCE = new HighScoreRegistry();
+
+    private int highScore = 0;
+
+    private HighScoreRegistry() { }
+
+    public static HighScoreRegistry getInstance() { return INSTANCE; }
+
+    public void recordScore(int score) {
+        if (score > highScore) {
+            highScore = score;
+        }
+    }
+}
+
+In the recorded stretch-goal run, the first game scored 27 and a second game played in the same run scored 18. The final line printed 'all-time high score: 27'. Which two behaviours does that single line confirm?",Only that the second game scored less than the first,"That the registry persisted across both games rather than resetting, and that recordScore() keeps the maximum rather than the latest value",That the high score is stored per game and the highest is printed at the end,That the second game failed to record its score at all,,2,"Both halves of the requirement in one number: shared across games, and a maximum rather than a running value. Had it printed 18, the second would have been wrong; had it printed 0, the first.",2
+"Real code:
+
+public class HighScoreRegistry {
+
+    private static final HighScoreRegistry INSTANCE = new HighScoreRegistry();
+
+    private int highScore = 0;
+
+    private HighScoreRegistry() { }
+
+    public static HighScoreRegistry getInstance() { return INSTANCE; }
+
+    public void recordScore(int score) {
+        if (score > highScore) {
+            highScore = score;
+        }
+    }
+}
+
+// requirement, from requirements.txt section 9
+// The game must remain correct if a second game is created and played in the same
+// program run, with no state leaking between them (except the shared all-time high score)
+
+The requirement forbids state leaking between games but explicitly allows this one exception. What makes the high score different from the score, the snake body or the current condition?","It is an int, and primitives cannot leak",It is a property of the player across all their games rather than a property of any one game - so it is the one value whose whole purpose is to outlive a single game,It is different because it is stored in a singleton,It is not really different; the exception is an inconsistency in the requirement,,2,"Getting the direction of the reasoning right matters: it is not shared because it lives in a singleton, it lives in a singleton because it is genuinely shared. Everything else stayed an instance field for exactly the same reason.",2
+"Real code:
+
+public class HighScoreRegistry {
+
+    private static final HighScoreRegistry INSTANCE = new HighScoreRegistry();
+
+    private int highScore = 0;
+
+    private HighScoreRegistry() { }
+
+    public static HighScoreRegistry getInstance() { return INSTANCE; }
+
+    public void recordScore(int score) {
+        if (score > highScore) {
+            highScore = score;
+        }
+    }
+}
+
+public class HighScoreObserver implements IGameObserver {
+
+    @Override
+    public void onScoreChanged(int newScore) {
+        // high score only matters once the game ends
+    }
+
+    @Override
+    public void onGameOver(int finalScore) {
+        HighScoreRegistry.getInstance().recordScore(finalScore);
+    }
+}
+
+MilestoneObserver was added later, announcing when a score crosses a threshold. Which existing classes had to change to support it?","IGameObserver, to add an onMilestone() method","None - it implements the existing interface and is registered with addObserver(), so SnakeGame and the other two listeners were untouched","SnakeGame, to call the new listener at the right moment","HighScoreRegistry, to track the milestone",,2,The third listener cost one new file and one registration line. That is the concrete version of 'a new score listener must be addable in isolation'.,1
+"Real code:
+
+public class MilestoneObserver implements IGameObserver {
+
+    private final int milestone;
+    private boolean announced = false;
+
+    @Override
+    public void onScoreChanged(int newScore) {
+        if (!announced && newScore >= milestone) {
+            announced = true;
+            System.out.println(""  [milestone] passed "" + milestone + "" points"");
+        }
+    }
+}
+
+Unlike the other two listeners, this one has a mutable 'announced' field. What must a caller therefore avoid doing with it?",Nothing - listeners may always be shared,"Registering the same instance on two different games, since the flag would already be set from the first game and the second game's milestone would never be announced",Registering it before the game starts,Registering it alongside HighScoreObserver,,2,The same trap as the counting spawn strategy: a stateful helper reused across games silently carries its history. Stateless listeners can be shared freely; this one cannot.,2
+"Real code:
+
+private void endGame() {
+    setState(GameOverState.getInstance());
+    notifyGameOver();
+}
+
+public interface IGameObserver {
+    void onScoreChanged(int newScore);
+    void onGameOver(int finalScore);
+}
+
+// SnakeGame
+private final List<IGameObserver> observers = new ArrayList<>();
+
+public void addObserver(IGameObserver observer) { observers.add(observer); }
+
+private void notifyScoreChanged() {
+    for (IGameObserver observer : observers) {
+        observer.onScoreChanged(score);
+    }
+}
+
+onGameOver() is delivered from endGame(), which also sets GameOverState. If instead each of the two death paths in performMove() called notifyGameOver() itself, what could go wrong?",Nothing - the result would be the same,"One path could set the state and forget to notify, or notify without setting the state, and a future third death path would have to remember to do both",The listeners would be called twice for one death,The state would change before the score was calculated,,2,Funnelling both endings through one private method makes the pairing structural rather than something each call site has to remember.,2
+"Real code:
+
+public interface IGameObserver {
+    void onScoreChanged(int newScore);
+    void onGameOver(int finalScore);
+}
+
+// SnakeGame
+private final List<IGameObserver> observers = new ArrayList<>();
+
+public void addObserver(IGameObserver observer) { observers.add(observer); }
+
+private void notifyScoreChanged() {
+    for (IGameObserver observer : observers) {
+        observer.onScoreChanged(score);
+    }
+}
+
+There is addObserver() but no removeObserver(). What does that prevent, and does it matter for this program?",It prevents any listener from being registered twice,"A listener cannot be detached once added, so a temporary one - say, a tutorial hint that should stop after the first food - has no way to unsubscribe. It does not matter today because every listener lives for the whole game",It prevents the observer list from ever being read,It means listeners are notified in random order,,2,"Reasonable to leave out until something needs it. Worth naming as a deliberate omission rather than an oversight, and worth noting that a real removeObserver has to cope with removal during notification.",2
+"Real code:
+
+public interface IGameObserver {
+    void onScoreChanged(int newScore);
+    void onGameOver(int finalScore);
+}
+
+// SnakeGame
+private final List<IGameObserver> observers = new ArrayList<>();
+
+public void addObserver(IGameObserver observer) { observers.add(observer); }
+
+private void notifyScoreChanged() {
+    for (IGameObserver observer : observers) {
+        observer.onScoreChanged(score);
+    }
+}
+
+private void notifyGameOver() {
+    for (IGameObserver observer : observers) {
+        observer.onGameOver(score);
+    }
+}
+
+Suppose a listener's onGameOver() threw an exception. What happens to the listeners registered after it?","They are still notified, because each listener runs independently","They are never called - the exception propagates out of the loop, so one badly behaved listener can silently starve every listener behind it",The exception is caught and logged automatically,The game restarts,,2,"A plain loop makes every listener depend on the good behaviour of the ones before it. Wrapping each call in a try/catch is the usual fix, and worth asking students whether the failure should be swallowed or collected.",2
+"Across both projects, the vending machine's slots and the snake's score changes are broadcast very differently: the vending machine's InventoryReportService is CALLED when someone wants a report, while snake listeners are TOLD whenever the score changes. What decides which approach fits?",Push is always better than pull for user interfaces,"Whether the interested party knows when to look. A report can be pulled on demand because the caller chooses the moment; a score change has no natural moment to check for, so it has to be pushed as it happens",Pull is always cheaper because nothing is stored,The choice is arbitrary and both work identically in all cases,,2,"Neither is the default. The question is who owns the timing - if the consumer does, let them pull; if only the producer knows when something happened, it must push.",2

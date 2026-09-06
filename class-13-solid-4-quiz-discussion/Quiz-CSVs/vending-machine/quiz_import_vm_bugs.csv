@@ -1,0 +1,425 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+// VendingMachine.java
+
+// The cash in the vending machine should not update if you are paying via UPI or card,
+// because then the cash is going into the bank account of the merchant
+// and not into the amount reservoir of the vending machine.
+
+public void receiveCash(double amount) {
+    changeService.receiveCash(amount);
+}
+
+// VendingMachineFacade as it stood in class-33, inside completePurchase()
+slot.dispenseOne();
+machine.releaseChange(change);
+machine.receiveCash(amountReceived); // this should be only possible for cash payments
+
+The comment in VendingMachine states a clear rule, and the trailing comment in the facade repeats it. Compare both against what the class-33 code actually did on a CARD purchase.",The code matched the comment - card purchases skipped both lines,"The code contradicted both comments: receiveCash() and releaseChange() ran for every payment type, so card purchases were adding money to the physical coin reserve that the machine never received",The code was correct but the comments were about a different class,"receiveCash() throws for card payments, so no bug could occur",,2,A comment describing a rule the code does not follow is worse than no comment - it reads like reassurance. Class-34 fixed this by gating both lines behind strategy.doesAffectChangeReserve().,2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+insertPayment() already asked the factory for a strategy and used it. completePurchase() then asks the factory for a strategy AGAIN rather than being handed the first one. For today's payment classes this is harmless. When would it stop being harmless?",Never - factories always return the same object,"As soon as a strategy carries state across a purchase - a decorator counting uses, a type tracking retry attempts, or anything with a running total. The second object would be a fresh one with that state reset to zero",Only if the factory is made static,Only if two customers use the machine at once,,2,"The current payment classes hold nothing but final constants, so a fresh instance is indistinguishable from the original. The moment one of them remembers anything, this line silently throws that memory away.",2
+"Real code:
+
+public class TransactionManager implements ITransactionLookup {
+
+    private final List<Transaction> allTransactions = new ArrayList<>();
+
+    public void save(Transaction transaction) {
+        allTransactions.add(transaction);
+    }
+
+    @Override
+    public List<Transaction> getTransactionHistory() {
+        System.out.println(""fetching transaction history (slow lookup)..."");
+        return allTransactions;
+    }
+}
+
+getTransactionHistory() hands back the field itself, not a copy. What can any caller do as a result?",Nothing - the list is final so it cannot be modified,"Anything: clear() it, remove individual transactions, or add fabricated ones - the manager's own records would change with no way for it to know","Only read it, because the method return type is List","Only add, not remove",,2,"final on the field stops the reference being reassigned; it does nothing to stop the list's CONTENTS being changed. Returning Collections.unmodifiableList(allTransactions), or a copy, closes this.",2
+"Real code:
+
+public class TransactionManager implements ITransactionLookup {
+
+    private final List<Transaction> allTransactions = new ArrayList<>();
+
+    public void save(Transaction transaction) {
+        allTransactions.add(transaction);
+    }
+
+    @Override
+    public List<Transaction> getTransactionHistory() {
+        System.out.println(""fetching transaction history (slow lookup)..."");
+        return allTransactions;
+    }
+}
+
+// from the class-30 notes on the parking lot, written BEFORE the vending machine was built:
+// - TicketManager.getAllTicketHistory() leaks the internal mutable list
+
+Compare the note written during the parking lot retrospective with the vending machine class written afterwards. What does this tell you about the value of that retrospective as it was used?","The note was wrong, which is why it was ignored","Writing a problem down does not prevent repeating it - the identical leak was reproduced in the next project, because nothing turned the note into something enforced like a review checklist or a test",The vending machine version is safe because it uses ArrayList rather than LinkedList,The two situations are unrelated,,2,"The most useful thing about spotting this in the quiz is the pattern, not the individual bug: retrospective notes that stay as prose tend to be re-learned rather than applied.",1
+"Real code:
+
+// VendingMachine
+public List<Slot> getSlots() {
+    return slots;
+}
+
+// InventoryReportService
+public int getTotalStock(VendingMachine machine) {
+    int total = 0;
+    for (Slot slot : machine.getSlots()) {
+        total += slot.getQuantity();
+    }
+    return total;
+}
+
+The reporting service reads the machine's slots through this getter. Beyond reading them, what else does this getter currently permit, and does the reporting service need that?",Nothing else - a getter can only be used to read,"It permits any caller to add or remove slots from the machine's live inventory list, which the reporting service never needs - it only iterates","It permits changing the price of a slot, which reporting does need","It permits nothing extra, since Slot has no setters",,2,"This is the same leak as the transaction history, in the class that was supposed to be the safe read-only consumer. A read-only view would give the reporting service everything it uses and nothing it does not.",2
+"Real code:
+
+// ChangeService
+public boolean canMakeChange(double amount) {
+    return changeReserve >= amount;
+}
+
+public void releaseChange(double amount) {
+    if (amount > changeReserve) {
+        throw new IllegalStateException(""not enough change reserve to release "" + amount);
+    }
+    changeReserve -= amount;
+}
+
+// facade, earlier in completePurchase()
+if (!machine.canMakeChange(change)) { ... throw new ChangeUnavailableException(...); }
+
+The facade has already checked canMakeChange() before releaseChange() is ever reached, so the throw inside releaseChange() can never fire in the current flow. Should it be deleted as dead code?",Yes - unreachable code should always be removed,"No. It protects ChangeService from any future caller who forgets to check first, and it states the class's own rule rather than depending on a promise made in a different class","Yes - the facade check makes it impossible to reach, so it is misleading","No, because Java requires a throw in any method that modifies a field",,2,"Two different jobs: the facade's check produces a clean customer-facing outcome, while this one stops the reserve going negative no matter who calls it. Only the second one still holds if someone writes a new caller.",2
+"Real code:
+
+public class AwaitingPaymentState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""a selection is already in progress, cancel first"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        machine.getPendingPurchase().addAmountReceived(amount);
+        System.out.println(""received "" + amount + "", total so far: ""
+                + machine.getPendingPurchase().getAmountReceived());
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""cancelling, refunding "" + machine.getPendingPurchase().getAmountReceived());
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+    }
+}
+
+A customer selects the 1.75 Soda, inserts a 1.00 coin, then presses cancel. Follow the code: the message prints 'cancelling, refunding 1.0'. What happens to the actual coin?",It is returned via ChangeService.releaseChange(1.00),Nothing happens to it. No line in cancel() touches the change reserve or returns anything - the machine physically holds a coin that no part of the system now records,It is added to the reserve as machine income,It is credited to the next customer's purchase,,2,"The class even carries a comment admitting this. It is the same defect shape as the parking lot's release(): output that reads like an action, with no action behind it.",2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+A 6.00 item is paid with 1.00 in cash followed by 5.00 by card. Measured on the real code: the change reserve reads 53.5 before and 53.5 after. Where did the customer's 1.00 coin go, as far as the software is concerned?",It was refunded automatically at the end of the purchase,"Nowhere - the machine physically holds it but never recorded it, because the reserve decision is taken once at the end using only the LAST payment method, and CARD reports that it does not affect the reserve",It was counted twice and then cancelled out,It was added to the reserve but immediately paid back out as change,,2,"One decision, taken once, from one strategy - applied to a total that may have arrived through several different methods. Correct handling would have to track the cash portion of each individual payment.",2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+Same 6.00 item, reversed order: 5.00 by card, then 1.00 in cash. Measured: the reserve reads 50.0 before and 56.0 after, a rise of 6.00, although only one 1.00 coin was inserted. Which line is responsible?","slot.dispenseOne(), which miscounts the sale","machine.receiveCash(amountReceived) - it is passed the whole purchase total rather than just the cash portion, so 5.00 of card money is recorded as coins that are not in the machine","machine.releaseChange(change), which adds instead of subtracting","The Transaction constructor, which stores the wrong amount",,2,Together with the previous question this shows one root cause producing opposite symptoms: money vanishing in one ordering and appearing from nowhere in the other. Both come from amountReceived being treated as if a single method paid all of it.,2
+"Real code:
+
+public class UPIPayment implements IPaymentStrategy {
+
+    @Override
+    public boolean doesAffectChangeReserve() {
+        return true;
+    }
+}
+
+// VendingMachine.java
+
+// The cash in the vending machine should not update if you are paying via UPI or card,
+// because then the cash is going into the bank account of the merchant
+// and not into the amount reservoir of the vending machine.
+
+public void receiveCash(double amount) {
+    changeService.receiveCash(amount);
+}
+
+Read the override against the rule stated in the comment. What does a UPI purchase currently do to the machine's coin reserve, and should it?","It leaves the reserve untouched, which is correct",It updates the reserve - adding the purchase total as if coins had been inserted and paying change out of the coin box - which directly contradicts the stated rule that UPI money goes to the merchant's bank,"It only pays out change and never adds, which is correct for UPI","It throws an exception, so the situation never arises",,2,"CashPayment should be the only type returning true. Correcting UPIPayment to inherit the false default is a one-line fix, and the fact that the code disagrees with a comment sitting a few files away is what made it easy to miss.",2
+"Real code:
+
+public class IdleState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        Slot slot = machine.findSlot(slotId);
+        if (slot == null || !slot.hasStock()) {
+            throw new SlotUnavailableException(""slot "" + slotId + "" is not available"");
+        }
+        machine.startPurchase(slot);
+        machine.setState(AwaitingPaymentState.getInstance());
+        System.out.println(""selected "" + slot.getProductName() + "", price: "" + slot.getPrice());
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""select a product before inserting payment"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is idle"");
+    }
+}
+
+// Slot
+public void dispenseOne() {
+    if (quantity <= 0) {
+        throw new IllegalStateException(""slot "" + id + "" is out of stock"");
+    }
+    quantity--;
+}
+
+IdleState.selectSlot() already refuses a slot with no stock, so by the time dispenseOne() runs the slot was known to have stock. Is the check inside dispenseOne() therefore pointless?",Yes - it duplicates a check that has already passed,"No. Time and several steps pass between selection and dispensing, and dispenseOne() is a public method any future code could call directly - the guard keeps the quantity from going negative regardless of who calls it or when",Yes - the state classes are the correct place for all validation,"No, because Java requires bounds checks on integer decrements",,2,A class should defend its own invariant rather than trust that every caller checked first. The selection-time check is about giving the customer a good message; this one is about the count never going negative.,2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+public class UnavailableState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""machine is unavailable (out of stock)"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""machine is unavailable (out of stock)"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is unavailable"");
+    }
+}
+
+This ternary on the last line is the only place in the entire project that puts the machine into UnavailableState, and no code anywhere calls Slot.restock(). What is the consequence once the final item is sold?",The machine returns to IdleState on the next attempted selection,"The machine is stuck permanently: every operation in UnavailableState either throws or does nothing, and there is no trigger anywhere that moves it back to Idle - even refilling a slot would not help",The machine automatically restocks itself after a delay,completePurchase() would throw on the next purchase attempt,,2,A genuine hole rather than a subtle bug: the design has a way in and no way out. Any real machine needs a technician-facing restock operation that both refills slots and returns the machine to Idle.,2
+"Real code:
+
+// Transaction stores exactly one method per purchase
+public Transaction(String slotId, String productName, double price, double changeGiven,
+                   PaymentMethod paymentMethod, long timestamp) { ... }
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+Because a strategy is selected per insertPayment() call, one purchase can be paid partly in cash and partly by card. What does the saved Transaction record in that case?","Both methods, stored as a list",Only the method of the call that happened to complete the purchase - every earlier method used for the same purchase is lost from the record,The method used for the largest portion of the payment,CASH always takes priority in the record,,2,"The Transaction was designed as though exactly one method pays for the whole purchase, while the payment flow allows several. Auditing a mixed purchase from the saved records would be impossible.",2
+"Real code:
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+A customer selects the 2.50 Chips and inserts 100.00 in cash. The machine holds only 5.00 in change. Trace what the customer experiences.",The purchase completes and the machine gives 97.50 in change it does not have,"canMakeChange(97.50) fails, so ChangeUnavailableException is thrown and nothing is dispensed - but note that the exception message says 'refunding 100.0' while no code actually returns the money",The machine dispenses the Chips and records a debt of 97.50,insertPayment() returns null and the machine waits for more money,,2,The refusal itself is correct and happens before anything is dispensed. The gap is the same one cancel() has: the message promises a refund that no line of code performs.,2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+Looking at the whole method, the change amount is calculated once as 'amountReceived - slot.getPrice()' and then used in two places: the canMakeChange() check and, later, releaseChange(). What property of this method makes that reuse safe?",Nothing makes it safe - it should be recalculated before releaseChange(),"Nothing between the two uses can alter amountReceived or the slot price: the pending purchase is not modified until resetTransaction() at the very end, so the value cannot have gone stale",It is safe because change is declared final,It is safe because double values are immutable in Java,,2,"Worth having students actually check rather than assume. The reasoning is about what the code between the two uses does - and here, nothing between them touches either input.",2
+"Across the parking lot and the vending machine, three defects share the same shape: AvailableState.release() printing 'cant release' and returning normally; AwaitingPaymentState.cancel() printing 'refunding 1.0' while moving no money; and completePurchase() deciding the reserve from a single payment method. What is the common lesson?",Always print more diagnostic messages,"Output that describes an action is not the same as performing it, and a caller that receives a normal return has no way to distinguish a real success from a message about an intention",Never use System.out.println in production code,Always validate input at the start of every method,,2,"The recurring failure is silence-shaped: the code carries on as normal after doing nothing, or after doing something partial. Either throwing, or returning a result the caller must inspect, would have exposed all three.",2

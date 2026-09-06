@@ -1,0 +1,397 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+performMove() is declared in the abstract SnakeGame and is never overridden by any subclass, while handleBoundary() is abstract and has no body here. Describe the division of labour this creates.",Subclasses supply the whole move; the parent only holds fields,"The parent fixes the order of every step of a move - compute the head, deal with the boundary, check self-collision, then eat or advance - and lets a subclass replace exactly one of those steps",Subclasses may reorder the steps as long as all of them run,The parent is only a namespace; handleBoundary() does all the work,,2,"A subclass cannot skip the collision check, reorder eating and moving, or forget to notify observers. Its only power is deciding what an out-of-bounds position means.",2
+"Real code:
+
+public class ClassicSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        boolean withinBounds = getBoard().isWithinBounds(rawNewHead.getRow(), rawNewHead.getCol());
+        return withinBounds ? rawNewHead : null;   // null -> hitting the wall ends the game
+    }
+}
+
+public class WrapAroundSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int wrappedRow = Math.floorMod(rawNewHead.getRow(), getBoard().getHeight());
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(wrappedRow, wrappedCol);  // never null
+    }
+}
+
+Compare the two return values. ClassicSnakeGame can return null; WrapAroundSnakeGame never does. Looking at how performMove() uses the result, what does returning null actually mean?",That the boundary check failed to run,"'This position is not a legal place to be' - performMove() responds to null by calling endGame(), so returning null is how a subclass says the move should end the game",That the position should be recalculated by the caller,That the snake should stay where it is for one turn,,2,"The hook's contract is a small protocol: return a usable position, or null to end the game. The wrap-around variant simply never uses the second half of that protocol.",2
+"Real code:
+
+public class WrapAroundSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int wrappedRow = Math.floorMod(rawNewHead.getRow(), getBoard().getHeight());
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(wrappedRow, wrappedCol);  // never null
+    }
+}
+
+The board is 5 rows tall, so valid rows are 0 to 4. The head is at row 0 and the player moves UP, making the raw candidate row -1. What does Math.floorMod(-1, 5) return, and what would the plain % operator have returned?","floorMod gives 4; plain -1 % 5 in Java gives -1, which is still off the board",Both give 4 - the two are interchangeable,floorMod gives -1; plain % gives 4,floorMod gives 0; plain % gives 0,,2,"Java's % keeps the sign of the left-hand operand, so a negative row stays negative and stays invalid. floorMod always returns a value between 0 and the divisor, which is precisely the wrap behaviour wanted.",2
+"Real code:
+
+public class WrapAroundSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int wrappedRow = Math.floorMod(rawNewHead.getRow(), getBoard().getHeight());
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(wrappedRow, wrappedCol);  // never null
+    }
+}
+
+Still on the 5x5 board: going off the RIGHT edge produces a raw column of 5, a positive number that is also out of range. Would plain % have worked for that case?",No - plain % fails for positive overflow too,"Yes: 5 % 5 is 0, the correct wrap. floorMod is needed specifically for the negative cases, going off the top or the left edge, where plain % returns a negative number",No - positive overflow needs a separate if-statement,"Yes, but only when the board is square",,2,"Worth being precise: floorMod is not magic, it differs from % only for negative inputs. Using it everywhere just avoids having to reason about which edge you are on.",2
+"Real code:
+
+public class WrapAroundSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int wrappedRow = Math.floorMod(rawNewHead.getRow(), getBoard().getHeight());
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(wrappedRow, wrappedCol);  // never null
+    }
+}
+
+In the recorded run, a wrap-around game on a 5-row board started at (0,0) and pressed UP eight times. The heads printed were: (4,0) (3,0) (2,0) (1,0) (0,0) (4,0) (3,0) (2,0). Explain the fifth and sixth entries.",The game restarted after five moves,"From (1,0) UP gives row 0, still on the board; from (0,0) UP gives raw row -1, which floorMod turns into row 4 - so the snake reappears at the bottom and the cycle repeats",The snake bounced off the top edge and reversed direction,Rows 0 and 4 are both treated as the top row,,2,"Eight presses of the same direction on a five-row board produce one full lap plus three more rows, exactly as printed. In a classic game the very first press would have ended it.",1
+"Real code:
+
+public class CylinderSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int row = rawNewHead.getRow();
+        if (row < 0 || row >= getBoard().getHeight()) {
+            return null;                            // top/bottom are fatal
+        }
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(row, wrappedCol);          // left/right wrap
+    }
+}
+
+CylinderSnakeGame was added later as a third boundary variant. Which files had to be modified to add it?","SnakeGame, to add a third branch to handleBoundary","None - it is a new class extending SnakeGame and overriding one method; SnakeGame, ClassicSnakeGame and WrapAroundSnakeGame were all untouched","SnakeGame and both existing variants, so they know a third mode exists","The Board class, to add a cylinder flag",,2,This is the extensibility claim actually being tested rather than asserted: a third mode cost one new file and zero edits.,2
+"Real code:
+
+public class CylinderSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int row = rawNewHead.getRow();
+        if (row < 0 || row >= getBoard().getHeight()) {
+            return null;                            // top/bottom are fatal
+        }
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(row, wrappedCol);          // left/right wrap
+    }
+}
+
+Reading CylinderSnakeGame carefully, which moves end the game and which wrap?",All four directions wrap; the game can never end from a boundary,"Going off the top or bottom returns null and ends the game, while going off the left or right wraps to the opposite column - a Pac-Man style board with solid top and bottom walls and side tunnels","All four directions are fatal, making it identical to ClassicSnakeGame",Only the left edge wraps; the other three are fatal,,2,The row check happens first and can return null; the column is then always wrapped. Mixing the two behaviours in one variant is possible precisely because the hook returns a whole position.,1
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+public enum Direction {
+    UP(-1, 0), DOWN(1, 0), LEFT(0, -1), RIGHT(0, 1);
+
+    private final int deltaRow;
+    private final int deltaCol;
+}
+
+A fourth variant is requested: a bouncing edge that reverses the snake's direction instead of killing it. Look at what handleBoundary() receives and what SnakeGame stores. Why can this hook not express that?","It can - return the reflected position, e.g. turn row -1 into row 1","It cannot. handleBoundary() is given only the candidate position, not the direction of travel, and SnakeGame stores no direction at all - each move's direction is supplied by the caller - so there is nowhere to record 'you are now travelling the other way' for the next move","It cannot, because Math.floorMod does not support negative bouncing","It can, but only for the wrap-around subclass",,2,"Reflecting the coordinate also fails in practice: row -1 becomes row 1, which is where the snake's own neck is, so it dies instantly. Supporting bounce means changing the hook's signature - the one part of a template method that subclasses cannot fix for themselves.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+Following on from the bounce problem: what is the minimum change that would make a bouncing variant possible?",Add a boolean bouncing flag to SnakeGame,"Change the hook so it receives the travel direction and can return more than a position - e.g. handleBoundary(Point rawNewHead, Direction direction) - and have SnakeGame remember the current direction between moves",Override performMove() in the bouncing subclass,Make handleBoundary() return a Board instead of a Point,,2,"The useful lesson: a template method's hook signature is a design commitment. It decides which future variants are cheap and which are impossible, and only the parent can widen it.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+handleBoundary() is called at step two, before the self-collision check and before any food handling. What would go wrong if it were called last instead?",Nothing - the order of the checks does not matter,"The collision and food checks would be run against a raw position that may not be on the board at all, so a wrap-around game would compare against coordinates like (-1, 0) which no body segment or food can ever occupy",The snake would grow twice per move,The observers would be notified before the move happened,,2,"The boundary step's job is to turn a raw candidate into the real position, and every later step depends on having the real one. That is why it is pinned at step two in the fixed part of the algorithm.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+public class ClassicSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        boolean withinBounds = getBoard().isWithinBounds(rawNewHead.getRow(), rawNewHead.getCol());
+        return withinBounds ? rawNewHead : null;   // null -> hitting the wall ends the game
+    }
+}
+
+The abstract parent calls handleBoundary(), a method it does not implement, from inside a method it does implement. What is the direction of the call at runtime?",The parent calls its own empty version,The parent's code calls down into whichever subclass the object actually is - a ClassicSnakeGame instance runs ClassicSnakeGame's version even though the call is written in SnakeGame,The subclass calls up into the parent,The call is resolved at compile time to the first subclass in the file,,2,"The parent controls the sequence but the subclass supplies one step, which is only possible because the call is dispatched on the actual object's type at runtime.",2
+"Real code:
+
+public class ClassicSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        boolean withinBounds = getBoard().isWithinBounds(rawNewHead.getRow(), rawNewHead.getCol());
+        return withinBounds ? rawNewHead : null;   // null -> hitting the wall ends the game
+    }
+}
+
+public class WrapAroundSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int wrappedRow = Math.floorMod(rawNewHead.getRow(), getBoard().getHeight());
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(wrappedRow, wrappedCol);  // never null
+    }
+}
+
+public class CylinderSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        int row = rawNewHead.getRow();
+        if (row < 0 || row >= getBoard().getHeight()) {
+            return null;                            // top/bottom are fatal
+        }
+        int wrappedCol = Math.floorMod(rawNewHead.getCol(), getBoard().getWidth());
+        return new Point(row, wrappedCol);          // left/right wrap
+    }
+}
+
+All three subclasses contain nothing except a constructor and handleBoundary(). Is a class this small worth having?",No - three near-empty classes are worse than one class with a mode flag,"Yes: the smallness is the evidence that the split worked. Each holds exactly the one thing that differs, and no variant can accidentally change any other part of a move",No - they should be merged into an enum of boundary behaviours,"Yes, but only because Java requires a class per file",,2,"A mode flag would put the three behaviours back inside one method and let a future edit there affect all three modes at once. That said, a boundary-handler passed in as a parameter would be a defensible alternative worth discussing.",2
+"Real code:
+
+public class Board {
+    public boolean isWithinBounds(int row, int col) {
+        return row >= 0 && row < height && col >= 0 && col < width;
+    }
+}
+
+public class ClassicSnakeGame extends SnakeGame {
+
+    @Override
+    protected Point handleBoundary(Point rawNewHead) {
+        boolean withinBounds = getBoard().isWithinBounds(rawNewHead.getRow(), rawNewHead.getCol());
+        return withinBounds ? rawNewHead : null;   // null -> hitting the wall ends the game
+    }
+}
+
+ClassicSnakeGame asks the Board whether a position is in bounds rather than comparing against width and height itself. What does that buy?",Nothing - the comparison is short enough to inline,"The rule for what counts as on the board is stated once. CylinderSnakeGame does its own row comparison instead, which is exactly the duplication this avoids elsewhere",It makes the Board immutable,It allows the board size to change mid-game,,2,"Note the honest inconsistency worth pointing out in class: Cylinder open-codes 'row < 0 || row >= getBoard().getHeight()' rather than reusing a Board method, so the two variants now express the same idea differently.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+Which of the following could a new SnakeGame subclass change WITHOUT touching SnakeGame itself? (select all that apply)",What happens when the snake reaches the edge of the board,Whether a move ends the game by returning null from the boundary step,Whether self-collision ends the game,The order in which food handling and the collision check happen,Whether observers get notified after a move,"1,2","Only the boundary step is open. Collision, ordering and notification are all in the fixed part of the algorithm, which is precisely the guarantee the parent is making to every future variant.",2

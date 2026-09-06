@@ -1,0 +1,308 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+Suppose VendingMachineFacade did not exist and Main had to buy one item itself. Which of these would Main then have to know about and call in the correct order? (select all that apply)",Asking the payment factory for the right strategy and calling process() on it,"Checking canMakeChange() BEFORE dispensing, and handling the refund path if it fails",Calling slot.dispenseOne() and updating the change reserve,"Building the Transaction, saving it, resetting the pending purchase and setting the next machine condition",Re-implementing the IMachineState interface,"1,2,3,4","Four separate collaborators in a strict order, with a failure path in the middle. That whole sequence is what the facade exists to hide - Main's version of this is a single call to facade.insertPayment(amount, method).",2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+canMakeChange() is checked before slot.dispenseOne() is called. What concretely goes wrong if those two lines are swapped?",Nothing - the customer gets their item either way,"The item is already gone when the change check fails, so the machine would have to throw ChangeUnavailableException after physically handing over a product it cannot make change for",The change reserve would go negative but the customer is unaffected,The slot count would be wrong but the money would be right,,2,Order is the point of this method. Everything that can still be refused cleanly is checked first; only once nothing can fail does the machine touch the physical world.,2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+A customer buys the 2.50 Chips with a 20.00 note, but the machine holds only 5.00 in change. Trace the ChangeUnavailableException path: what is the machine's condition afterwards, and was the item dispensed?","Item dispensed, machine left in DispensingState","Nothing dispensed. resetTransaction() clears the pending purchase and the machine is put back into IdleState before the exception is thrown, so the next customer starts clean","Nothing dispensed, but the pending purchase is kept so the customer can add more money",Item dispensed and the change owed is recorded for later,,2,The failure path deliberately restores the machine to a usable condition before throwing. Leaving it stuck mid-purchase would make one failed transaction take the machine out of service.,1
+"Real code:
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+// how Main copes with the return value
+private static void printIfCompleted(VendingMachineFacade facade, Transaction transaction) {
+    if (transaction != null) {
+        System.out.println(""purchase complete: "" + transaction.getProductName() + ...);
+    } else {
+        System.out.println(""payment incomplete, amount still owed: "" + facade.getAmountOwed());
+    }
+}
+
+insertPayment() returns a Transaction when the purchase completes and null when more money is still owed. What is the practical downside of signalling it this way?",None - returning null is the standard way to signal this in Java,"null carries no information about WHY there is no transaction, and nothing forces the caller to check. A caller who forgets gets a NullPointerException at some unrelated later line instead of a clear message",It prevents the method from ever completing a purchase,It makes the method slower because null must be boxed,,2,"Main happens to check, but only because whoever wrote Main knew to. Returning a small result object, or an Optional, would make 'not finished yet' a state the caller has to acknowledge rather than one they can walk past.",2
+"Real code:
+
+public double getAmountOwed() {
+    return machine.getPendingPurchase().getAmountOwed();
+}
+
+// VendingMachine
+public void resetTransaction() {
+    this.pendingPurchase = null;
+}
+
+getAmountOwed() is public and can be called at any time. What happens if it is called when no purchase is in progress - for example right after a completed sale?","It returns 0.0, which is correct","getPendingPurchase() returns null after resetTransaction(), so this throws a NullPointerException",It returns the amount owed on the previous purchase,It throws InvalidMachineStateException,,2,"Main only ever calls it in the branch where a purchase is known to be in progress, so the bug never fires today - it is a latent one waiting for the first caller who does not know that rule.",2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+completePurchase() is private, while selectProduct(), insertPayment() and cancel() are public. What would be lost by making completePurchase() public?",Nothing - more public methods make a class more useful,It is only ever valid to run after enough money has been received; exposing it would let a caller dispense an item and record a transaction without having paid,It would break compilation because the method returns a Transaction,The state classes would no longer be able to call it,,2,"The public surface is the set of things a customer can legitimately do. Everything that is only valid as a step inside a larger sequence stays private, which is exactly how the facade keeps the ordering guarantee it just made.",1
+"Real code:
+
+public class VendingMachineFacade {
+
+    private final VendingMachine machine;
+    private final PaymentStrategyFactory paymentStrategyFactory;
+    private final TransactionManager transactionManager;
+
+    public VendingMachineFacade(TransactionManager transactionManager) {
+        this.machine = VendingMachine.getInstance();
+        this.paymentStrategyFactory = new PaymentStrategyFactory();
+        this.transactionManager = transactionManager;
+    }
+}
+
+The facade needs three collaborators. One is passed in, the other two it obtains itself. Why does that inconsistency matter?","It does not matter, since all three end up in final fields","Only the passed-in one can be swapped by the caller. The machine and the factory are fixed at compile time, so a test or a second configuration can replace the transaction manager but not the other two",It matters only because the constructor is public,It prevents the class from being used more than once,,2,"Nothing is wrong with a class creating a small stateless helper such as the factory. The machine is the questionable one, because it is the collaborator most likely to need swapping.",2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+The requirement said the outside caller should never need to coordinate slot lookup, payment validation, change calculation and stock decrement itself. Which single sentence best describes what this method is therefore responsible for?",Implementing the payment rules for each payment type,Ordering other objects' work correctly and handling the failure path - it performs almost no calculation of its own beyond computing the change amount,Storing the machine's slots and change reserve,Deciding which condition each state class should transition to next,,2,"A good facade is mostly a sequence of delegations. If it starts accumulating rules of its own - a card minimum here, a fee there - it has stopped being a facade and become a second home for business logic.",1
+"Real code:
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+A new requirement arrives: refund the customer if they cancel after paying partially. Based on how responsibilities are currently split, where should the money movement live?","Inside AwaitingPaymentState.cancel(), because that is where cancel is handled","In the facade, because moving money means coordinating the change reserve, the pending purchase and the machine condition together - which is the same multi-step job completePurchase() already does","Inside PendingPurchase, because it holds the amount received","Inside ChangeService, because it owns the reserve",,2,"The state class can decide that a cancel is legal and what condition follows, but the moment several collaborators must be updated in order, that sequencing belongs where the other sequences live.",2
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+Count what completePurchase() touches: the pending purchase, the slot, the change service via the machine, the payment strategy, the transaction manager, and the machine's condition. Is a method that touches six things a sign the facade is doing too much?",Yes - it should be split into six single-purpose methods immediately,"Not necessarily. Touching many collaborators is precisely a facade's job; the warning sign would be if it started making decisions those collaborators should own, such as calculating a card fee itself",Yes - any method over ten lines is doing too much,No - facades have no limits on what they may contain,,2,"Breadth of collaboration is expected here. What matters is depth of knowledge: the facade knows the ORDER of the steps, but not the RULES inside any of them.",2
+"Real code:
+
+public static void main(String[] args) {
+    VendingMachine machine = VendingMachine.getInstance();
+
+    machine.addSlot(new Slot(""A1"", ""Chips"", 2.50, 3));
+    machine.addSlot(new Slot(""A2"", ""Soda"", 1.75, 2));
+    machine.addSlot(new Slot(""A3"", ""Candy Bar"", 6.00, 1));
+    machine.receiveCash(50.0);
+
+    TransactionManager transactionManager = new TransactionManager();
+    VendingMachineFacade facade = new VendingMachineFacade(transactionManager);
+
+    facade.selectProduct(""A1"");
+    printIfCompleted(facade, facade.insertPayment(3.00, PaymentMethod.CASH));
+    ...
+}
+
+Reading only Main, how much would a new developer need to know about IMachineState, PendingPurchase, ChangeService or the payment classes to follow what the program does?",All of them - Main names each one directly,"None of them. Main names the machine, slots, the facade, a transaction manager and the payment method enum; every other collaborator is reached only through the facade","Only ChangeService, because Main loads the float","Only IMachineState, because it governs the calls",,2,This is the practical measure of whether the facade earned its place: the entry point's import list is the honest report card.,1
+"The vending machine's facade wraps four collaborators behind three public methods. In the parking lot project, ParkingFacade wrapped SpotFinder, the pricing factory and TicketManager behind parkVehicle() and unPark(). What is the recurring shape in both?",Both classes exist mainly to reduce the number of imports in Main,"In both, a multi-step sequence with a strict order and a failure path is collapsed into a single call, so the caller cannot perform the steps in the wrong order or skip one",Both classes exist to make the code run faster,Both are required because the underlying classes are in different packages,,2,"The value is the enforced ordering, not the tidier imports. A caller physically cannot dispense before checking change, because there is no way to ask for just that step.",2

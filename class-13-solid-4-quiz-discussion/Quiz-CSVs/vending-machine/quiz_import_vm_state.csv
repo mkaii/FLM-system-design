@@ -1,0 +1,339 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+// VendingMachine - the only three things the outside world can trigger
+public void selectSlot(String slotId) { state.selectSlot(this, slotId); }
+public void insertPayment(double amount) { state.insertPayment(this, amount); }
+public void cancel() { state.cancel(this); }
+
+These three methods are the machine's entire public trigger surface, and none of them contains a single if/else about what the machine is currently doing. Where did that decision-making go?",It was removed - the machine now allows every operation at any time,"Into the state object held in the 'state' field: whichever IMachineState is currently active decides what each of these three calls means, including whether it is allowed at all","Into the VendingMachineFacade, which checks the condition before calling these","Into the Slot class, which knows whether it can be selected",,2,"Each condition the machine can be in is a separate class implementing IMachineState. Swapping the object in the 'state' field swaps the behaviour of all three triggers at once, which is why no branching is needed here.",2
+"Real code:
+
+public class AwaitingPaymentState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""a selection is already in progress, cancel first"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        machine.getPendingPurchase().addAmountReceived(amount);
+        System.out.println(""received "" + amount + "", total so far: ""
+                + machine.getPendingPurchase().getAmountReceived());
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""cancelling, refunding "" + machine.getPendingPurchase().getAmountReceived());
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+    }
+}
+
+A customer has already selected slot A1, so the machine is currently in AwaitingPaymentState. Before paying, they now call facade.selectProduct(""A2""). What happens?",The selection quietly switches to A2 and the machine keeps waiting for payment,"InvalidMachineStateException is thrown with the message 'a selection is already in progress, cancel first' - the second selection is refused outright",A2 is queued and dispensed after A1 is paid for,The machine returns to IdleState and both selections are discarded,,2,"AwaitingPaymentState refuses selectSlot entirely. The customer must call cancel() first, which resets the pending purchase and returns the machine to IdleState.",1
+"Real code:
+
+public class IdleState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        Slot slot = machine.findSlot(slotId);
+        if (slot == null || !slot.hasStock()) {
+            throw new SlotUnavailableException(""slot "" + slotId + "" is not available"");
+        }
+        machine.startPurchase(slot);
+        machine.setState(AwaitingPaymentState.getInstance());
+        System.out.println(""selected "" + slot.getProductName() + "", price: "" + slot.getPrice());
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""select a product before inserting payment"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is idle"");
+    }
+}
+
+IdleState.insertPayment() throws instead of just holding the money as credit until a product is chosen. Looking at what IdleState.selectSlot() does before payment is possible, why is throwing the reasonable choice here?",Because Java requires interface methods to throw if they are not implemented,"Because the pending purchase object only gets created by startPurchase() during selectSlot - in IdleState there is literally nowhere to record the money against, so accepting it would mean silently losing it",Because coins cannot be physically accepted until a slot is chosen,Because IdleState is a singleton and cannot hold any data,,2,"machine.startPurchase(slot) is what creates the PendingPurchase. Until that has happened, machine.getPendingPurchase() is null, so there is no place to add the money. Throwing makes that impossible situation visible instead of losing the customer's money.",2
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public class AvailableState implements IState {
+
+    @Override
+    public void assign(ISpot spot) {
+        System.out.println(""Assigned available spot"");
+        spot.setState(OccupiedState.getInstance());
+    }
+
+    @Override
+    public void release(ISpot spot) {
+        System.out.println(""cant release , is already available"");
+    }
+}
+
+// From the PARKING LOT project (class-29)
+public double unPark(Ticket ticket) {
+    ticket.setExitTime(System.currentTimeMillis());
+    IPricingStrategy strategy = pricingStrategyFactory.getPricingStrategy(ticket.getVehicle());
+    double fee = strategy.calculateFee(ticket);
+
+    ticket.getSpot().release();
+    return fee;
+}
+
+This is the parking lot from class-29, not the vending machine. Note that unPark() calculates the fee BEFORE calling release(), and that releasing an already-available spot only prints a message. If unPark(ticket) is accidentally called twice with the same ticket, what happens on the second call?","The second call throws an exception, so the caller knows it failed","The second call recalculates and returns a fee again - and the caller has no way to tell it was a repeat, so the customer is charged twice",The second call returns 0.0 because the spot is already free,The second call is ignored entirely and returns null,,2,"release() on an already-available spot prints 'cant release , is already available' and returns normally. Because unPark() computes the fee before that call and never checks the outcome, the second call looks exactly like a successful first one.",2
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public class AvailableState implements IState {
+
+    @Override
+    public void assign(ISpot spot) {
+        System.out.println(""Assigned available spot"");
+        spot.setState(OccupiedState.getInstance());
+    }
+
+    @Override
+    public void release(ISpot spot) {
+        System.out.println(""cant release , is already available"");
+    }
+}
+
+Continuing from the double-charge problem in the parking lot: what single change to AvailableState.release() would have made that bug impossible, and how does the vending machine already do this?",Return a boolean and have every caller check it,"Throw an exception instead of printing - which is exactly what the vending machine's states do, e.g. AwaitingPaymentState.selectSlot() throws InvalidMachineStateException rather than printing and carrying on",Add a synchronized keyword to release(),Make AvailableState non-singleton so each spot gets its own,,2,This is the direct lesson carried from the parking lot into the vending machine. An operation that is illegal for the current condition must fail loudly; a printed message that the caller cannot see is indistinguishable from success.,2
+"Real code:
+
+public class IdleState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        Slot slot = machine.findSlot(slotId);
+        if (slot == null || !slot.hasStock()) {
+            throw new SlotUnavailableException(""slot "" + slotId + "" is not available"");
+        }
+        machine.startPurchase(slot);
+        machine.setState(AwaitingPaymentState.getInstance());
+        System.out.println(""selected "" + slot.getProductName() + "", price: "" + slot.getPrice());
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""select a product before inserting payment"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is idle"");
+    }
+}
+
+public class UnavailableState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""machine is unavailable (out of stock)"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""machine is unavailable (out of stock)"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is unavailable"");
+    }
+}
+
+Compare cancel() in these two states with the vending machine's DispensingState, whose cancel() throws InvalidMachineStateException(""cannot cancel while dispensing""). Is it inconsistent that some cancels print and one throws?","Yes - all three should throw, printing is always wrong","No. Cancelling when there is nothing in progress is harmless and the caller's intent (end up with nothing pending) is already satisfied, whereas cancelling mid-dispense is a request the machine genuinely cannot honour","Yes - all three should print, throwing from cancel is always wrong","No, because cancel() is not part of IMachineState",,2,"The useful rule is not 'always throw' but 'never silently fail'. A cancel with nothing pending succeeds trivially. A cancel during dispensing cannot be carried out, so it must be reported.",2
+"Real code:
+
+public class IdleState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        Slot slot = machine.findSlot(slotId);
+        if (slot == null || !slot.hasStock()) {
+            throw new SlotUnavailableException(""slot "" + slotId + "" is not available"");
+        }
+        machine.startPurchase(slot);
+        machine.setState(AwaitingPaymentState.getInstance());
+        System.out.println(""selected "" + slot.getProductName() + "", price: "" + slot.getPrice());
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""select a product before inserting payment"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is idle"");
+    }
+}
+
+IdleState, AwaitingPaymentState, DispensingState and UnavailableState are all singletons with private constructors, and the machine shares one instance of each. What makes that safe here?",Singletons are always safe for state classes,"None of these classes declares any fields - every piece of data they touch arrives as the VendingMachine parameter, so there is nothing per-machine for them to hold",It is safe because there is only ever one VendingMachine,The private constructor prevents the state from being modified,,2,"The state classes are pure behaviour. If a state ever needed to remember something specific to one machine (a retry counter, a timestamp), sharing one instance would immediately break and each machine would need its own.",2
+"Real code:
+
+public class AwaitingPaymentState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""a selection is already in progress, cancel first"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        machine.getPendingPurchase().addAmountReceived(amount);
+        System.out.println(""received "" + amount + "", total so far: ""
+                + machine.getPendingPurchase().getAmountReceived());
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""cancelling, refunding "" + machine.getPendingPurchase().getAmountReceived());
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+    }
+}
+
+The customer has selected the 1.75 Soda and inserted 1.00, so a pending purchase exists with 1.00 received. They now call facade.cancel(). What is the machine's condition afterwards, and what happens to the pending purchase?","Still AwaitingPaymentState, pending purchase kept with 1.00 recorded","IdleState, and the pending purchase is discarded by resetTransaction() so nothing from the abandoned attempt carries into the next customer's","UnavailableState, because the purchase failed","IdleState, but the pending purchase is kept so the customer can resume later",,2,resetTransaction() sets pendingPurchase back to null and the state goes back to Idle. Leaving stale purchase data behind is exactly how the next customer would end up with someone else's credit.,1
+"Real code:
+
+private Transaction completePurchase(PaymentMethod method) {
+    Slot slot = machine.getPendingPurchase().getSlot();
+    double amountReceived = machine.getPendingPurchase().getAmountReceived();
+    double change = amountReceived - slot.getPrice();
+
+    if (!machine.canMakeChange(change)) {
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+        throw new ChangeUnavailableException(""cannot make change of "" + change
+                + "", refunding "" + amountReceived);
+    }
+
+    machine.setState(DispensingState.getInstance());
+
+    slot.dispenseOne();
+
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    if (strategy.doesAffectChangeReserve()) {
+        machine.releaseChange(change);
+        machine.receiveCash(amountReceived);
+    }
+
+    Transaction transaction = machine.getPendingPurchase()
+            .complete(change, method, System.currentTimeMillis());
+    transactionManager.save(transaction);
+
+    machine.resetTransaction();
+    machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+    return transaction;
+}
+
+This method belongs to VendingMachineFacade, not to any state class, yet it calls machine.setState(...) twice directly. Given that state transitions elsewhere happen inside the state classes themselves, what is the honest assessment of these two lines?",It is correct and required - facades are always responsible for transitions,"It is a leak: the facade is now a second place that drives transitions, so to know how the machine moves between conditions you must read both the state classes and this method","It has no effect, because setState is ignored during a purchase",It is required because DispensingState has no way to transition out of itself,,2,"Worth arguing about in class. It works, and DispensingState genuinely has no trigger that would move it along - but the cost is that the transition rules are no longer in one place, which was a main reason for using state objects at all.",2
+"Real code:
+
+public class UnavailableState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""machine is unavailable (out of stock)"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""machine is unavailable (out of stock)"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is unavailable"");
+    }
+}
+
+// VendingMachineFacade, last line of completePurchase()
+machine.setState(machine.hasAnyStock() ? IdleState.getInstance() : UnavailableState.getInstance());
+
+// Slot.java
+public void restock(int units) {
+    quantity += units;
+}
+
+Searching the whole project, this ternary is the ONLY place UnavailableState is ever entered, and nothing anywhere calls restock(). Once the last item is sold, can the machine ever serve a customer again?",Yes - calling restock() on a slot automatically returns the machine to IdleState,"No. Nothing transitions out of UnavailableState, and UnavailableState.selectSlot() throws, so the machine is permanently bricked even if a technician refills a slot",Yes - the machine returns to IdleState on the next selectSlot attempt,Yes - UnavailableState.cancel() moves it back to Idle,,2,"A real gap, not a trick question. restock() exists but is never wired to a state transition, and no operation is legal in UnavailableState. A working design needs a restock trigger that puts the machine back into Idle.",2
+"Real code:
+
+public class IdleState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        Slot slot = machine.findSlot(slotId);
+        if (slot == null || !slot.hasStock()) {
+            throw new SlotUnavailableException(""slot "" + slotId + "" is not available"");
+        }
+        machine.startPurchase(slot);
+        machine.setState(AwaitingPaymentState.getInstance());
+        System.out.println(""selected "" + slot.getProductName() + "", price: "" + slot.getPrice());
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        throw new InvalidMachineStateException(""select a product before inserting payment"");
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""nothing to cancel, machine is idle"");
+    }
+}
+
+IdleState.selectSlot() throws SlotUnavailableException for an empty slot, while its insertPayment() throws InvalidMachineStateException. Why use two different exception types rather than one?",Purely arbitrary - one exception type would be equally clear,"They describe different failures: 'you asked for something that is out of stock' is about the slot, while 'that operation is not legal right now' is about the machine's condition. A caller may reasonably want to handle those differently",SlotUnavailableException is required because Slot is in a different package,InvalidMachineStateException cannot be thrown from selectSlot,,2,"Main demonstrates the difference: it catches SlotUnavailableException to report a sold-out product, which is a normal customer-facing outcome, not a programming error.",1
+"Real code:
+
+public interface IMachineState {
+    void selectSlot(VendingMachine machine, String slotId);
+    void insertPayment(VendingMachine machine, double amount);
+    void cancel(VendingMachine machine);
+}
+
+You are asked to add a MaintenanceState in which nothing may be selected or paid for, entered when a technician opens the machine. Which of the following are needed? (select all that apply)",A new MaintenanceState class implementing IMachineState,Some trigger that calls machine.setState(MaintenanceState.getInstance()),"Edits to IdleState, AwaitingPaymentState, DispensingState and UnavailableState so they know about the new condition",A new method added to the IMachineState interface,An if/else added to VendingMachine.selectSlot() for the maintenance case,"1,2","The four existing states, the interface and the VendingMachine trigger methods are all untouched. Only the new class plus a way to enter it are required - that is the whole payoff of putting each condition in its own class.",2
+"Real code:
+
+// VendingMachine - the only three things the outside world can trigger
+public void selectSlot(String slotId) { state.selectSlot(this, slotId); }
+public void insertPayment(double amount) { state.insertPayment(this, amount); }
+public void cancel() { state.cancel(this); }
+
+Suppose the four state classes were deleted and replaced with an enum field plus a switch inside each of these three methods. The program's output today would be identical. What specifically gets worse?",Nothing measurable - with four conditions the switch is arguably easier to follow in one place,"Adding a fifth condition means editing three switches that already work correctly, and the rules for one condition are scattered across three methods instead of sitting together in one class","It would not compile, because you cannot switch on an enum in Java",The machine would no longer be able to change conditions at runtime,,2,"The honest trade-off: at four conditions, one switch really is readable. The cost lands on the fifth condition, and on the day you want to read everything Idle does without hunting through three separate methods.",2
+"Real code:
+
+public class AwaitingPaymentState implements IMachineState {
+
+    @Override
+    public void selectSlot(VendingMachine machine, String slotId) {
+        throw new InvalidMachineStateException(""a selection is already in progress, cancel first"");
+    }
+
+    @Override
+    public void insertPayment(VendingMachine machine, double amount) {
+        machine.getPendingPurchase().addAmountReceived(amount);
+        System.out.println(""received "" + amount + "", total so far: ""
+                + machine.getPendingPurchase().getAmountReceived());
+    }
+
+    @Override
+    public void cancel(VendingMachine machine) {
+        System.out.println(""cancelling, refunding "" + machine.getPendingPurchase().getAmountReceived());
+        machine.resetTransaction();
+        machine.setState(IdleState.getInstance());
+    }
+}
+
+Note the comment the class carries above cancel(): 'cancel should return the amount that has been paid so far instead of just printing it' and 'no money movement has happened'. A customer inserts 1.00 in cash and then cancels. What actually happens to that coin in the current code?",It is returned to the customer by ChangeService,"Nothing moves. The message says 'refunding 1.0' but no code touches the change reserve or returns anything to the caller, so the coin's fate is simply unrecorded",It is added to the change reserve as machine income,It is carried over as credit for the next customer,,2,The printed message describes an intention the code does not carry out. This is the same failure shape as the parking lot's release(): a message that reads like success while nothing happened.,2
+"Across the whole vending machine, an operation that is illegal for the machine's current condition results in an InvalidMachineStateException rather than a printed message and a normal return. Which practical benefit does that give the code that CALLS these operations?",It makes the code run faster because no string is printed,The caller cannot accidentally carry on as if the operation had succeeded - a failed call interrupts the flow instead of returning normally and leaving the caller to guess,It guarantees the machine will never end up in a wrong condition,It removes the need for the caller to handle any errors,,2,"Main relies on exactly this: it wraps the deliberately-illegal calls in try/catch and prints 'Expected failure: ...'. If those calls had returned silently, Main could not have told the difference between a rejection and a success.",1

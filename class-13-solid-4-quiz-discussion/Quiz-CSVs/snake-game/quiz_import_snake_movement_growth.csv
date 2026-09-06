@@ -1,0 +1,510 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public abstract class SnakeGame {
+
+    private final Deque<Point> body = new ArrayDeque<>();
+    private final Set<Point> occupied = new HashSet<>();
+
+    private IGameState state = RunningState.getInstance();
+    private FoodItem currentFood;
+    private int score = 0;
+}
+
+The snake is stored twice over: an ordered Deque and an unordered Set holding the same cells. Why keep both instead of just the Deque?",The Set is a backup in case the Deque is corrupted,"They answer different questions cheaply. The Deque knows the ORDER, needed to add a head and drop a tail; the Set answers 'is this cell part of the snake' in one step instead of scanning the whole body",The Set stores food positions as well,A Deque cannot store Point objects,,2,"Without the Set, the self-collision check would have to walk the whole snake on every move, so a longer snake would make every move slower. The cost is that both must be kept in step by hand.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+Compare the two branches. The eating branch adds a head and stops; the other branch adds a head AND removes the tail. Where is the growth actually implemented?",In a separate grow() method called when food is eaten,"There is no growth code. Both branches add a head; growth is simply the eating branch NOT removing the tail, so the snake ends up one segment longer","In body.addFirst(), which adds two entries when eating","In FoodItem, which reports how many segments to add",,2,Nothing counts segments and no flag records 'growing'. A normal move adds one and removes one for no net change; skipping the removal once is the entire mechanism.,2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+public enum Direction {
+    UP(-1, 0), DOWN(1, 0), LEFT(0, -1), RIGHT(0, 1);
+
+    private final int deltaRow;
+    private final int deltaCol;
+}
+
+The body holds, front to back, (3,4) (3,3) (3,2) - head at column 4. The player moves RIGHT, and there is no food at the new position. List the body afterwards.","(3,5) (3,4) (3,3) (3,2) - four segments","(3,5) (3,4) (3,3) - still three segments, every coordinate shifted one column right","(3,3) (3,2) (3,1) - the snake moved backwards","(3,4) (3,3) (3,2) - unchanged, since no food was eaten",,2,"RIGHT adds 1 to the column, so the new head is (3,5). It goes on the front, and because nothing was eaten the old tail (3,2) is dropped - the length is unchanged and the snake has slid forward.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+Same starting body (3,4) (3,3) (3,2), same RIGHT move, but this time food is sitting at (3,5). What is the body afterwards?","(3,5) (3,4) (3,3) - the tail still moves because the head advanced","(3,5) (3,4) (3,3) (3,2) - four segments, because the eating branch never removes the tail","(3,5) (3,4) (3,3) (3,2) (3,1) - the snake grows by two","(3,4) (3,3) (3,2) - the snake pauses for one move while eating",,2,"Identical to the previous move except that the tail (3,2) survives. Comparing the two answers side by side is the clearest way to see growth as an omission rather than an action.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+The condition is:
+
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+Stated in plain language, when does the snake die from this check?","Whenever the new head is anywhere on the snake, including the tail",When the new head lands on any part of the snake EXCEPT the tail cell - moving onto the tail is allowed because the tail is leaving that cell on this same move,Only when the new head lands exactly on the tail,Only when the snake is longer than three segments,,2,"The exception is not that the tail is special, but that the tail cell is about to be empty. Every other segment stays exactly where it is during this move.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+private FoodItem spawnFood() {
+    Point position;
+    do {
+        position = new Point(random.nextInt(board.getHeight()), random.nextInt(board.getWidth()));
+    } while (occupied.contains(position));
+    return foodSpawnStrategy.nextFoodCreator().spawnAt(position);
+}
+
+An earlier version of this line read:
+
+    occupied.contains(newHead) && !(newHead.equals(tail) && !eatsFood)
+
+The '&& !eatsFood' was later removed. Why was removing it safe?",Because eatsFood is always false when the head reaches the tail by coincidence,"Because spawnFood() never places food on an occupied cell, and the tail is occupied - so food can never sit on the tail, making 'newHead equals the tail' and 'eatsFood' mutually exclusive already",Because eating no longer affects the tail,It was not safe; removing it introduced a bug,,2,"The removed term guarded a case the spawn loop already makes impossible. Fine as a simplification, but it does tie the correctness of this line to an invariant enforced in a different method.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+In the non-eating branch, the order is: pollLast, remove(tail), addFirst, add(newHead). An earlier version added the head first and removed the tail afterwards. On a two-segment snake with head (2,3) and tail (3,3) moving DOWN onto its own tail, the old order left body with 2 entries but occupied with only 1. What went wrong?",addFirst silently failed because the cell was taken,"occupied.add(newHead) did nothing, since (3,3) was already in the Set as the tail; the later remove(tail) then deleted (3,3) outright, throwing away the cell the new head had just claimed",pollLast removed the head instead of the tail,The Set rejected the duplicate and threw an exception,,2,"Adding a value already present in a Set is a silent no-op, so the Set could not tell that ownership of that cell had changed hands. Removing the tail first and then adding the head fixes it.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+Following on: with occupied missing a cell the snake really occupies, what could go wrong later?",Nothing - occupied is only used for reporting,"Two things: a later move onto that cell would not be detected as a collision, and spawnFood() could place food directly on top of the snake, since both rely on occupied being complete",The snake would be drawn one segment short,The score would be one point too low,,2,The Set is the single source of truth for both the collision check and food placement. Any drift between it and the Deque corrupts both.,2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+The tail is captured with body.peekLast() before any modification, and used later for both the collision check and the removal. Why capture it up front rather than calling peekLast() again where it is needed?",To avoid the cost of a second method call,"Because the body is modified in between - after addFirst the last element may no longer be the tail that the collision decision was based on, so the two uses must refer to the same original tail",Because peekLast() removes the element,Because tail must be final to be used in a boolean expression,,2,Both uses need the board as it was BEFORE this move. Re-reading afterwards would silently mix pre-move and post-move views of the same snake.,2
+"Real code:
+
+protected SnakeGame(Board board, Point startPosition,
+                    IFoodSpawnStrategy foodSpawnStrategy, Random random) {
+    this.board = board;
+    this.foodSpawnStrategy = foodSpawnStrategy;
+    this.random = random;
+    body.addFirst(startPosition);
+    occupied.add(startPosition);
+    this.currentFood = spawnFood();
+}
+
+The constructor adds the start position to both body and occupied before calling spawnFood(). Would swapping those two lines matter?",No - the order of independent statements never matters,"Yes. spawnFood() rejects positions already in occupied, so if it ran first the very first food could be placed directly under the snake's head",Yes - the snake would start with zero length,"No, because the board is empty at construction time",,2,"The one-cell snake is easy to overlook, and on a small board the chance of the food landing on it is not small. Ordering is doing real work in what looks like plain setup.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+public enum Direction {
+    UP(-1, 0), DOWN(1, 0), LEFT(0, -1), RIGHT(0, 1);
+
+    private final int deltaRow;
+    private final int deltaCol;
+}
+
+A snake occupying (3,4) (3,3) (3,2) is travelling right. The player presses LEFT, which would put the head at (3,3). What happens, and is any special anti-reverse rule needed?",Nothing happens; the reverse is rejected by Direction,"The head would land on (3,3), the segment directly behind it, which is not the tail - so the ordinary collision check ends the game. No special rule is needed because reversing is just a normal self-collision","The snake reverses direction and continues, tail first","It is allowed, because (3,3) will be vacated this move",,2,"A nice case where a rule most implementations write explicitly falls out of a check that already exists. Note that a two-segment snake reversing lands on the tail instead, which IS allowed.",2
+"Real code:
+
+public abstract class SnakeGame {
+
+    private final Deque<Point> body = new ArrayDeque<>();
+    private final Set<Point> occupied = new HashSet<>();
+
+    private IGameState state = RunningState.getInstance();
+    private FoodItem currentFood;
+    private int score = 0;
+}
+
+public class Point {
+    private final int row;
+    private final int col;
+
+    @Override
+    public boolean equals(Object o) { ... row == point.row && col == point.col ... }
+
+    @Override
+    public int hashCode() { return Objects.hash(row, col); }
+}
+
+Point overrides equals() and hashCode(). What in the snake's movement code would break if hashCode() were left out?",Nothing - equals() alone is sufficient,"The HashSet would stop working: two Points with the same row and column could land in different buckets, so occupied.contains(newHead) could report false for a cell the snake is genuinely on",The Deque would reject duplicate points,Only the printed output would look wrong,,2,Every use of occupied depends on value equality working in a hash-based collection. Overriding one without the other is the classic way to get a Set that appears to lose its contents.,2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+The eating branch calls spawnFood() BEFORE notifyScoreChanged(). What would a listener see if those two lines were swapped?",The same thing - listeners only receive the score,"The same score either way, but a listener that also queried game.getFoodPosition() during the callback would see the OLD food position, which the snake is already standing on",The score would be one food behind,The listener would be notified twice,,2,"Callbacks fire in the middle of an operation, so what a listener can observe depends on how much of the update has already happened. Notifying only once the object is fully consistent avoids exposing a half-finished state.",2
+"Real code:
+
+public void performMove(Direction direction) {
+    Point currentHead = body.peekFirst();
+    Point rawNewHead = new Point(currentHead.getRow() + direction.getDeltaRow(),
+            currentHead.getCol() + direction.getDeltaCol());
+
+    Point newHead = handleBoundary(rawNewHead);   // <-- the one varying step
+    if (newHead == null) {
+        endGame();
+        return;
+    }
+
+    Point tail = body.peekLast();
+    boolean eatsFood = newHead.equals(currentFood.getPosition());
+    boolean bitesItself = occupied.contains(newHead) && !(newHead.equals(tail));
+
+    if (bitesItself) {
+        endGame();
+        return;
+    }
+
+    if (eatsFood) {
+        body.addFirst(newHead);
+        occupied.add(newHead);
+        score += scoringRule.pointsFor(currentFood);
+        currentFood = spawnFood();
+        notifyScoreChanged();
+    } else {
+        body.pollLast();
+        occupied.remove(tail);
+        body.addFirst(newHead);
+        occupied.add(newHead);
+    }
+}
+
+protected abstract Point handleBoundary(Point rawNewHead);
+
+Which of these statements about a single call to performMove() are true? (select all that apply)",The body always gains exactly one head cell unless the game ends,The Set and the Deque always end the call holding the same cells,The tail is removed on every move without exception,The score can change on a move where the length does not,A move that ends the game leaves the body unchanged,"1,2,5","The tail survives when eating, which is growth. Score and length always change together, since both happen only in the eating branch. And both endGame() paths return before any mutation, so a fatal move leaves no trace on the snake.",2

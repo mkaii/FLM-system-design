@@ -1,0 +1,261 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public interface IPaymentStrategy {
+    double process(double amount);
+}
+
+public class UPIPayment implements IPaymentStrategy {
+    private static final double PROCESSING_FEE = 0.10;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered <= PROCESSING_FEE) {
+            throw new InvalidPaymentException(""amount too small to cover the UPI processing fee"");
+        }
+        return amountTendered - PROCESSING_FEE;
+    }
+}
+
+process() returns a double instead of being void or returning a boolean. What does that return value let a payment type do that a boolean could not?",Nothing useful - the returned number is only used for logging the transaction,"It lets a payment type change how much money actually counts toward the purchase, not just approve or reject it - UPI credits 0.10 less than the customer handed over",It is required because Java interfaces cannot declare void methods,It lets the strategy return the slot price so the facade can compare against it,,2,"A boolean could only answer 'is this payment allowed'. Returning the credited amount lets each type transform the money as well: UPI deducts its fee, cash and card pass the amount straight through. That is exactly why the facade names the result 'credited' and not 'amount'.",2
+"Real code:
+
+public class UPIPayment implements IPaymentStrategy {
+    private static final double PROCESSING_FEE = 0.10;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered <= PROCESSING_FEE) {
+            throw new InvalidPaymentException(""amount too small to cover the UPI processing fee"");
+        }
+        return amountTendered - PROCESSING_FEE;
+    }
+}
+
+A customer selects the 1.75 Soda slot and inserts 2.00 by UPI. The program prints:
+
+    received 1.9, total so far: 1.9
+
+Why 1.9 and not 2.00?",The machine rounds all payments down to one decimal place,"process() subtracted the 0.10 processing fee before the amount ever reached the machine, so only 1.90 counts toward the 1.75 price",0.10 was held back as a deposit and returned with the change,The slot price of 1.75 was rounded up to 1.90,,2,"The fee is applied inside UPIPayment.process(), so the machine is only ever told about the post-fee number. The machine itself has no idea a fee exists.",1
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+A customer selects the 6.00 Candy Bar and inserts 4.99 by card. What actually happens?",4.99 is credited and the machine waits for the remaining 1.01,"process() throws InvalidPaymentException, so machine.insertPayment(credited) is never reached and nothing at all is credited",The payment is silently ignored and the machine credits 0.00,The card is charged 4.99 and then refunded during the change check,,2,"The throw happens on the strategy line, before the facade ever calls machine.insertPayment(). Real output: 'card payments require a minimum of 5.0'. The selection stays active, so the customer can still cancel or pay properly.",1
+"Real code:
+
+public class CardPayment implements IPaymentStrategy {
+    private static final double MIN_CARD_AMOUNT = 5.0;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered < MIN_CARD_AMOUNT) {
+            throw new InvalidPaymentException(""card payments require a minimum of "" + MIN_CARD_AMOUNT);
+        }
+        return amountTendered;
+    }
+}
+
+MIN_CARD_AMOUNT lives inside CardPayment. Why not put that check inside VendingMachineFacade.insertPayment() instead?",Because the facade package cannot import constants from the payment package,"Because the rule only applies to cards - putting it in the facade would force the facade to know which rule belongs to which payment type, and to be edited again for every new type added",Purely a style preference - both locations behave identically and neither is better,Because constants must be declared in the class nearest to Main,,2,"Each payment type owning its own rules is the whole point. The facade stays a coordinator that knows nothing about fees or minimums, so adding a payment type never drags it into the change.",2
+"Real code:
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+You are asked to add a Wallet payment type that deducts a 1% fee. Which of the following must be created or edited? (select all that apply)",A new WalletPayment class implementing IPaymentStrategy,The PaymentMethod enum - add a WALLET value,PaymentStrategyFactory - add a branch returning WalletPayment,VendingMachineFacade.insertPayment() - add handling for the new type,"CashPayment, CardPayment and UPIPayment - update them to be aware of the new type","1,2,3",The three existing payment classes and the facade are untouched. The enum value plus the factory branch are the price of a factory that switches on an enum - a registry-based factory could remove even those two edits.,2
+"Real code:
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+How much does the facade know about fees, minimums, or how any payment type validates itself?",It knows all of them - the rules are duplicated here as a safety check,"Nothing. It asks the factory for a strategy, calls process(), and uses whatever number comes back","It knows the card minimum only, because cards are special","It knows the rules through the PaymentMethod enum, which carries them as fields",,2,This is what makes the payment types genuinely swappable: the facade's code would read identically if there were three payment types or thirty.,1
+"Real code:
+
+public class UPIPayment implements IPaymentStrategy {
+    private static final double PROCESSING_FEE = 0.10;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered <= PROCESSING_FEE) {
+            throw new InvalidPaymentException(""amount too small to cover the UPI processing fee"");
+        }
+        return amountTendered - PROCESSING_FEE;
+    }
+}
+
+A customer pays for the same 1.75 slot in two UPI installments of 1.00 each. Real output:
+
+    received 0.9, total so far: 0.9      (owed 0.85)
+    received 0.9, total so far: 1.8
+
+The purchase completed with 0.05 change instead of 0.25. Why?","The 0.10 fee is charged on every insertPayment() call, so splitting the payment cost 0.20 in fees instead of 0.10",The change reserve rounded the amount down to the nearest 0.05,UPI payments are always rounded to the nearest 0.05,The first installment was rejected and silently never credited,,1,"A fresh strategy is built per insertPayment() call, and process() applies the fee each time. Whether that is acceptable is a product decision - but nothing in the design prevents it, and the strategy has no way to know it is the second installment of the same purchase.",2
+"Real code:
+
+public Transaction insertPayment(double amount, PaymentMethod method) {
+    IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+    double credited = strategy.process(amount);
+
+    machine.insertPayment(credited);
+
+    Slot slot = machine.getPendingPurchase().getSlot();
+    if (machine.getPendingPurchase().getAmountReceived() >= slot.getPrice()) {
+        return completePurchase(method);
+    }
+    return null;
+}
+
+A 6.00 slot is paid with 1.00 in cash and then 5.00 by card. Both are accepted and the purchase completes. What PaymentMethod does the saved Transaction record?","CASH, because that payment came first","CARD - completePurchase(method) only receives the method of the call that finished the purchase, so every earlier method is lost",Both - the Transaction stores a list of the methods used,Neither - mixed-method purchases are rejected before completing,,2,"Verified by running it: recorded method = CARD. Because the strategy is chosen per call, a single purchase can legitimately mix methods, but the Transaction was designed as though exactly one method paid for the whole thing.",2
+"Real code:
+
+// inside completePurchase(PaymentMethod method)
+IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+if (strategy.doesAffectChangeReserve()) {
+    machine.releaseChange(change);
+    machine.receiveCash(amountReceived);
+}
+
+A 6.00 slot is paid 1.00 in cash, then 5.00 by card. Measured: the machine's change reserve was 53.5 before the purchase and 53.5 after - unchanged, even though the customer physically dropped in a 1.00 coin. Why?",The reserve only decreases when change is paid out; it never increases,"The reserve decision is made once at the end, from the last strategy used. That was CARD, whose doesAffectChangeReserve() is false, so receiveCash() never ran and the coin was never recorded",Cash amounts below 2.00 are ignored by ChangeService,The 1.00 was automatically refunded to the customer,,2,"The machine is now physically holding a coin it has no record of. The root cause is that money can arrive across several calls with different methods, but the reserve gets exactly one yes/no decision at the end from exactly one strategy.",2
+"Real code:
+
+// inside completePurchase(PaymentMethod method)
+IPaymentStrategy strategy = paymentStrategyFactory.getStrategy(method);
+
+if (strategy.doesAffectChangeReserve()) {
+    machine.releaseChange(change);
+    machine.receiveCash(amountReceived);
+}
+
+Now reverse the order: 5.00 by card, then 1.00 in cash, on the same 6.00 slot. Measured: reserve was 50.0 before and 56.0 after - a 6.00 increase, although only a 1.00 coin was inserted. What went wrong?","Nothing - 56.0 is correct, because the merchant settles the card money into the machine later","receiveCash() is handed amountReceived, the whole purchase total, rather than just the cash portion - so 5.00 of card money got recorded as physical coins",The reserve counted the 1.00 coin six times,The card payment was refunded into the reserve,,2,"This is the previous question's bug seen from the other side, same root cause: one flag, from one strategy, deciding the fate of a total that may have come from several methods. Correct handling needs the cash portion tracked per payment, not a single decision at the end.",2
+"Real code:
+
+public IPaymentStrategy getStrategy(PaymentMethod method) {
+    if (method == PaymentMethod.CASH) {
+        return new CashPayment();
+    } else if (method == PaymentMethod.CARD) {
+        return new CardPayment();
+    }
+    ...
+}
+
+A brand new object on every single call, never cached - unlike the parking lot's SpotFactory, which cached one instance per size in a static block. Given what these payment classes actually hold, is not caching them wasteful?",Yes - they should be cached in a static Map exactly the way SpotFactory did it,"No. They hold no per-transaction state, only final constants, so caching them would also have been safe here - the reason SpotFactory's cache was a bug is that a parking spot DOES hold state, so sharing one instance made every compact spot the same object",Yes - object creation in Java is always too expensive to do per call,"No, because the JVM automatically pools small short-lived objects",,2,The transferable rule: caching instances in a factory is safe when the objects are stateless and dangerous when they are not. Payment strategies are stateless. Spots are not.,2
+"Real code (added in class-34):
+
+public interface IPaymentStrategy {
+
+    double process(double amount);
+
+    default boolean doesAffectChangeReserve() {
+        return false;
+    }
+}
+
+What did adding this second method to the interface cost the three payment classes that already existed?",All three had to implement the new method before the project would compile,"Nothing - the default body means every existing implementer keeps compiling and keeps its old behaviour, and only a type that needs a different answer overrides it",All three had to be changed to extend an abstract base class instead of implementing the interface,The interface could not be changed at all without breaking PaymentStrategyFactory,,2,"Without the default, adding a method to an interface breaks every implementer at once. The default is what let the interface grow while CashPayment, CardPayment and UPIPayment stayed untouched - only CashPayment needed to override it.",1
+"Real code:
+
+public class UPIPayment implements IPaymentStrategy {
+    @Override
+    public boolean doesAffectChangeReserve() {
+        return true;
+    }
+}
+
+And a comment sitting in VendingMachine.java:
+
+    // The cash in the vending machine should not update if you are paying via UPI or card,
+    // because then the cash is going into the bank account of the merchant
+    // and not into the amount reservoir of the vending machine.
+
+What is the consequence of this override as written?",None - UPI is a form of cash as far as the machine is concerned,A UPI purchase updates the physical coin reserve: it adds money the machine never physically received and pays out change from a reserve UPI should not touch - which directly contradicts the stated requirement,UPI payments will throw an exception at runtime,"It affects only the reporting figures, not the actual reserve",,2,"The code and the comment disagree, and the comment is the requirement. Only CashPayment should return true here. A comment describing intent that the code does not honour is worse than no comment - it makes the bug harder to spot.",2
+"Real code:
+
+public class UPIPayment implements IPaymentStrategy {
+    private static final double PROCESSING_FEE = 0.10;
+
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered <= PROCESSING_FEE) {
+            throw new InvalidPaymentException(""amount too small to cover the UPI processing fee"");
+        }
+        return amountTendered - PROCESSING_FEE;
+    }
+}
+
+A UPI payment of 2.00 on a 1.75 slot produced:
+
+    changeGiven=0.1499999999999999
+
+What is the cause, and where does the fix belong?",A mistake in UPIPayment's subtraction that a different formula would fix,"double cannot represent values like 0.10 or 1.75 exactly, so the error is inherent to using double for money throughout - process(), the slot price and the change reserve all use it. The fix is a money type such as BigDecimal or integer cents, not a change to any one strategy",Only a printing problem - the stored value really is exactly 0.15,The fee was accidentally applied twice,,2,The interface signature 'double process(double amount)' is what carries this problem through the whole system. Any real payment system stores money as integer minor units or BigDecimal for exactly this reason.,2
+"Suppose the three payment classes were deleted and replaced by one class:
+
+public class PaymentProcessor {
+    public double process(double amount, PaymentMethod method) {
+        switch (method) {
+            case CASH: ...
+            case CARD: ...
+            case UPI:  ...
+        }
+    }
+}
+
+The program would produce byte-for-byte identical output today. What specifically gets worse?","Nothing measurable - for three cases it is the same behaviour in fewer files, and arguably simpler to read","Every new payment type means editing a method that already works correctly for the existing types, and no single type's rules can be read, changed or tested on their own any more","It would not compile, because a switch cannot return a value",The facade would have to import the switch statement,,2,"This is the honest trade-off worth arguing about in class: at three cases the switch really is not obviously worse to read. The cost only shows up on the fourth change, when you are editing working code instead of adding a file next to it.",2
+"Real code:
+
+public class CashPayment implements IPaymentStrategy {
+    @Override
+    public double process(double amountTendered) {
+        if (amountTendered <= 0) {
+            throw new InvalidPaymentException(""cash amount must be positive"");
+        }
+        return amountTendered;
+    }
+}
+
+Why does this throw rather than just return 0.0 for a bad amount?","0.0 would be credited as a perfectly valid payment of zero, leaving the machine waiting in AwaitingPayment as though the customer had paid, with no signal that anything failed",Java does not permit returning 0.0 from an interface method,Only so the failure appears in the console log,Because throwing is faster than returning a value,,1,"Same lesson as the parking lot bug where release() on an already-available spot just printed a message: a failure that returns a plausible-looking value is indistinguishable from success, and the caller carries on as if all is well.",1
