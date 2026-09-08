@@ -1,0 +1,92 @@
+Class 40 — Runnable, Thread States, Thread Methods, When Threading Helps
+
+
+1. RUNNABLE INSTEAD OF extends Thread
+   - class-39 used `extends Thread`. Problems:
+       * burns the one inheritance slot
+       * welds task to worker
+       * same task can't be given to 2 threads
+   - Runnable: `new Thread(task, "worker-1")` — task injected, worker fixed
+   - Show named class first, lambda second
+   - Callbacks: composition over inheritance (class-25); same shape as Strategy
+   - Forward: executors take Runnable, never a Thread subclass
+
+
+2. THREAD STATES — Thread.State, 6 values
+   NEW            created, start() not called
+   RUNNABLE       eligible to run
+   BLOCKED        waiting for a synchronized lock      <- needs locks, next class
+   WAITING        wait(), join() no timeout            <- needs locks, next class
+   TIMED_WAITING  sleep(ms), join(ms)
+   TERMINATED     run() returned
+
+   - RUNNABLE covers "running now" AND "ready, waiting for a core". getState()
+     can't tell them apart — don't draw a separate Running box
+   - Only 4 are demoable today: NEW / RUNNABLE / TIMED_WAITING / TERMINATED
+   - Demo: print getState() before start (NEW), mid-sleep (TIMED_WAITING),
+     after join (TERMINATED). Needs Thread.sleep(50) in main to catch the middle one
+
+
+3. THREAD METHODS
+   starting     start()  — new thread
+                run()    — plain call, runs on CALLING thread. Demo: prints "main"
+                start() twice -> IllegalThreadStateException (from class-39)
+   waiting      join(), join(ms)
+   pausing      sleep(ms) — STATIC, always affects current thread
+                trap: t.sleep(1000) compiles, sleeps the caller not t
+   identity     currentThread(), getName(), setName(), getId()
+   inspection   getState(), isAlive()
+   exit         setDaemon(true) — must be before start(); JVM exits without waiting
+                interrupt() — a request, not a kill; task chooses to honour it
+   hints        yield(), setPriority() — OS may ignore. No demo depends on these
+   dead         stop() / suspend() / resume() — one line, don't demo
+
+
+4. WHEN DOES THREADING HELP — the measured demo
+
+   Q: does fib on N threads actually get faster with no wait state?
+   A: yes — 4x fib(38): 236ms -> 68ms (3.5x). No waiting needed, there are 10 cores.
+      But sleep() demos something DIFFERENT. Run both, labelled:
+
+      A  CPU-BOUND   fib(36)       pure compute, never waits
+      B  BLOCKED     sleep(500)    pure waiting, uses no CPU
+
+   16 tasks split across N threads. This machine: 10 cores (4 perf + 6 eff), JDK 25
+
+      threads |  A: fib(36)      |  B: sleep(500)
+      --------+------------------+-----------------
+         1    |   358 ms  ( 1.0x)|  8059 ms  ( 1.0x)
+         2    |   220 ms  ( 1.6x)|  4033 ms  ( 2.0x)
+         4    |   128 ms  ( 2.8x)|  2019 ms  ( 4.0x)
+         8    |   104 ms  ( 3.4x)|  1010 ms  ( 8.0x)
+        16    |    85 ms  ( 4.2x)|   505 ms  (16.0x)
+
+   - A: sub-linear, flattens. Work needs a core -> ceiling = core count
+   - B: dead-on linear. Sleeping thread needs no core
+   - = parallelism (hardware-limited) vs concurrency (barely limited)
+   - Frame sleep as standing in for HTTP/DB/file read. Never run B alone —
+     teaches the false lesson that threads always scale linearly
+
+   Discussion:
+   - why 4.2x not 10x?  -> only 4 perf cores, 6 slower eff cores, + JIT/GC noise
+   - 200 threads?       -> A: worse. B: fine. (argument for sizing pools differently)
+   - which of our LLD projects needed threads? -> none. Request/response, no waiting
+     inside a call. That's why class-30's concurrency notes stayed latent
+
+   Live-demo gotchas:
+   - warm JIT first (fib(30), discard) or first number is inflated
+   - numbers move; talk about shape not exact ms
+   - not on battery saver / with a build running
+
+
+5. FILES TO BUILD
+   runnable/MyTask.java        Runnable reused by 2 threads
+   runnable/LambdaDemo.java    same task as lambda
+   runnable/RunVsStart.java    run() prints main, start() prints worker-1
+   states/StateDemo.java       NEW -> TIMED_WAITING -> TERMINATED
+   methods/JoinDemo.java       with / without join()
+   methods/DaemonDemo.java     infinite daemon, JVM still exits
+   methods/InterruptDemo.java  interrupt() honoured vs ignored
+   bench/Bench.java            the two workloads + table
+
+   Bench last — everything before it is mechanics, Bench answers "why bother"
