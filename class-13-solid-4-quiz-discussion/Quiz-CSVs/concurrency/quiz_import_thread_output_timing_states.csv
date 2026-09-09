@@ -1,0 +1,781 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public class MyThread extends Thread {
+
+    void logic() {
+        System.out.println(Thread.currentThread().getName());
+        System.out.println(""Task running"");
+    }
+
+    @Override
+    public void run() {
+        logic();
+    }
+}
+
+// Main
+System.out.println(Thread.currentThread().getName() + "" start"");
+
+MyThread t1 = new MyThread();
+MyThread t2 = new MyThread();
+
+System.out.println(Thread.currentThread().getName() + "" 2 threads created before calling the start method"");
+
+t1.start();
+t2.start();
+
+System.out.println(Thread.currentThread().getName() + "" after calling the start method on both of them"");
+System.out.println(""Mainak Ghosh"");
+
+What name does the FIRST line print, and what names do the two threads print from inside logic()?","All of them print main, because logic() is defined in the same file","The first line prints main. The two threads print Thread-0 and Thread-1, because currentThread() inside run() is the thread executing it, not main","The first line prints Thread-0, and the threads print main twice","All three print Thread-0, because they share the same MyThread class",,2,"currentThread() always reports whoever is executing that line. Default names are Thread-0, Thread-1 and so on, which is why passing a name into the constructor makes output far easier to read.",2
+"Real code:
+
+public class MyThread extends Thread {
+
+    void logic() {
+        System.out.println(Thread.currentThread().getName());
+        System.out.println(""Task running"");
+    }
+
+    @Override
+    public void run() {
+        logic();
+    }
+}
+
+// Main
+System.out.println(Thread.currentThread().getName() + "" start"");
+
+MyThread t1 = new MyThread();
+MyThread t2 = new MyThread();
+
+System.out.println(Thread.currentThread().getName() + "" 2 threads created before calling the start method"");
+
+t1.start();
+t2.start();
+
+System.out.println(Thread.currentThread().getName() + "" after calling the start method on both of them"");
+System.out.println(""Mainak Ghosh"");
+
+Which parts of the output order are GUARANTEED? (select all that apply)",main start is printed before the 2 threads created line,The 2 threads created line is printed before either thread's output,t1's output always appears before t2's output,Mainak Ghosh is always the very last line of the whole program,The after calling the start method line is printed after the 2 threads created line,"1,2,5","Everything main prints keeps its own order, and anything printed before start() must come before the threads run. But t1 versus t2 order is up to the scheduler, and main can easily finish its last lines while the two threads are still printing.",2
+"Real code:
+
+public class MyThread extends Thread {
+
+    void logic() {
+        System.out.println(Thread.currentThread().getName());
+        System.out.println(""Task running"");
+    }
+
+    @Override
+    public void run() {
+        logic();
+    }
+}
+
+Instead of t1.start(), someone writes t1.run(). What name gets printed by logic()?","Thread-0, because t1 is a Thread object","main - calling run() directly is an ordinary method call, so it executes on the current thread and no new thread is created at all","Nothing is printed, because run() must be called by start()",It throws IllegalThreadStateException,,2,The single most common threading mistake. start() asks the JVM for a new thread and that thread then calls run(). Calling run() yourself skips all of that.,1
+"Real code:
+
+// Main
+System.out.println(Thread.currentThread().getName() + "" start"");
+
+MyThread t1 = new MyThread();
+MyThread t2 = new MyThread();
+
+System.out.println(Thread.currentThread().getName() + "" 2 threads created before calling the start method"");
+
+t1.start();
+t2.start();
+
+System.out.println(Thread.currentThread().getName() + "" after calling the start method on both of them"");
+System.out.println(""Mainak Ghosh"");
+
+A second t1.start() is added right after the first one. What happens?",The task simply runs a second time on a new thread,"IllegalThreadStateException is thrown - a thread object cannot be started twice, even after it has finished",It is silently ignored,It restarts the same thread from the beginning,,2,"Once a thread has been started its object is used up. To run the same task again you need a new Thread object, which is much easier when the task is a Runnable that can be handed to a fresh Thread.",1
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName() + "" Task running"");
+        for (int i = 0; i < 5; i++) {
+            System.out.println(Thread.currentThread().getName() + "" "" + i);
+        }
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + "" Task finished"");
+    }
+}
+
+Two threads both run this same MyTask instance. Can one thread's numbered lines appear in the middle of the other thread's numbered lines?",No - the loop runs to completion before the other thread gets a turn,"Yes. Nothing coordinates the two threads, so their println calls can interleave in any order, for example worker-1 0, worker-2 0, worker-1 1","No, because both threads share one MyTask object",Only if the loop count is above 1000,,2,"There is no lock and no join here, so the scheduler can switch between them at any point. Each individual line prints intact, but the lines from the two threads can be mixed together.",2
+"Real code:
+
+public class Fibonacci implements Runnable {
+
+    private int n;
+
+    public Fibonacci(int n) {
+        this.n = n;
+    }
+
+    private int getNthfib(int n) {
+        if (n == 1 || n == 2) {
+            return 1;
+        }
+        return getNthfib(n - 1) + getNthfib(n - 2);
+    }
+
+    @Override
+    public void run() {
+        System.out.println(getNthfib(n));
+    }
+}
+
+// Main
+int[] numbers = {6, 7, 8, 9};
+
+for (int n : numbers) {
+    Fibonacci task = new Fibonacci(n);
+    Thread t = new Thread(task);
+    t.start();
+}
+
+Which four numbers get printed? (getNthfib treats n=1 and n=2 as 1)","6, 7, 8, 9","8, 13, 21, 34","5, 8, 13, 21","1, 1, 2, 3",,2,"The sequence is 1 1 2 3 5 8 13 21 34, so the 6th to 9th values are 8, 13, 21 and 34.",1
+"Real code:
+
+public class Fibonacci implements Runnable {
+
+    private int n;
+
+    public Fibonacci(int n) {
+        this.n = n;
+    }
+
+    private int getNthfib(int n) {
+        if (n == 1 || n == 2) {
+            return 1;
+        }
+        return getNthfib(n - 1) + getNthfib(n - 2);
+    }
+
+    @Override
+    public void run() {
+        System.out.println(getNthfib(n));
+    }
+}
+
+// Main
+int[] numbers = {6, 7, 8, 9};
+
+for (int n : numbers) {
+    Fibonacci task = new Fibonacci(n);
+    Thread t = new Thread(task);
+    t.start();
+}
+
+Are those four numbers guaranteed to print in the order 8, 13, 21, 34?","Yes - the loop starts the threads in that order, so they print in that order","No. Starting in order does not mean finishing in order; four separate threads print whenever they finish, so any order is possible","Yes, because each Fibonacci object holds a different n","No, and in fact they always print in reverse order",,2,"In practice the smaller numbers usually appear first because they finish sooner, but nothing guarantees it. Reliable ordering needs join() or collecting the results instead of printing from inside run().",2
+"Real code:
+
+// Main
+int[] numbers = {6, 7, 8, 9};
+
+for (int n : numbers) {
+    Fibonacci task = new Fibonacci(n);
+    Thread t = new Thread(task);
+    t.start();
+}
+
+The loop never calls join(), so main reaches the end of its own code almost immediately. Do the four numbers still get printed?",No - when main ends the JVM stops and the threads are killed,"Yes. These are ordinary (non-daemon) threads, and the JVM keeps running until they all finish, so main ending early does not stop them",Only the first number is printed,"No, the program throws an exception when main ends with threads running",,2,"main is just one thread among several. The JVM shuts down once all ordinary threads are done, not when main happens to finish.",2
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error..."");
+        }
+    }
+}
+
+public class Waiter implements Runnable {
+
+    private Thread threadToWaitFor;
+
+    public Waiter(Thread threadToWaitFor) {
+        this.threadToWaitFor = threadToWaitFor;
+    }
+
+    @Override
+    public void run() {
+        try {
+            System.out.println(""start waiting "");
+            threadToWaitFor.join();
+            System.out.println(""enough waiting"");
+        } catch (InterruptedException e) {
+            System.out.println(""error..."");
+        }
+    }
+}
+
+// Main - demo 2
+Thread t2 = new Thread(r1, ""sleepy_thread"");   // MyTask sleeps 3000 ms
+
+Runnable r2 = new Waiter(t2);
+Thread t3 = new Thread(r2, ""waiter"");
+
+t2.start();
+t3.start();
+
+Thread.sleep(100);
+System.out.println(t3.getState());
+
+MyTask sleeps 3000 ms. Give the printed output of demo 2 and the rough timing of each line.","start waiting immediately, then enough waiting immediately after","start waiting almost immediately, then a pause of about 3 seconds while t2 sleeps, then enough waiting once t2 has finished","enough waiting first, then start waiting",Only start waiting is printed - enough waiting never runs,,2,"The Waiter prints, then blocks inside t2.join() until t2's 3 second sleep is over, then prints again. The gap between the two lines IS the join.",2
+"Real code:
+
+// Main - demo 3
+Counter c1 = new Counter();
+
+Runnable countRunner = new CounterRunnable(c1);   // both threads share ONE counter
+Thread p1 = new Thread(countRunner, ""person1"");
+Thread p2 = new Thread(countRunner, ""person 2"");
+
+p1.start();
+
+Thread.sleep(100);
+p2.start();
+
+System.out.println(p1.getState());
+System.out.println(p2.getState());
+
+p1.join();
+p2.join();
+
+System.out.println(c1.getCount());
+
+In demo 3, which line of output can only be produced after BOTH threads have completely finished, and why?","System.out.println(p1.getState()), because a state can only be read at the end","System.out.println(c1.getCount()), because it comes after p1.join() and p2.join(), which each block until that thread is done","System.out.println(p2.getState()), because p2 started last",None - all of the lines can print at any time,,2,The two join() calls are what make the final count trustworthy. Without them main could print the count while the threads were still incrementing.,2
+"Real code:
+
+public class Sleeper implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error"");
+        }
+    }
+}
+
+// Main
+for (int i = 1; i <= 4; i++) {
+    Sleeper task = new Sleeper();
+    Thread t = new Thread(task);
+    t.start();
+}
+
+Sleeper sleeps 3000 ms. Roughly how long from the start of the loop until all four threads have finished?",About 12 seconds - four sleeps of 3 seconds each,"About 3 seconds - all four threads sleep at the same time, because a sleeping thread does not need a core","About 3 seconds, but only on a machine with 4 or more cores","Unpredictable, anywhere between 3 and 12 seconds",,2,"Measured: all four finished in just over 3 seconds. Waiting overlaps for free, and it does not depend on core count at all.",2
+"Real code:
+
+public class Sleeper implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error"");
+        }
+    }
+}
+
+// Main
+for (int i = 1; i <= 4; i++) {
+    Sleeper task = new Sleeper();
+    Thread t = new Thread(task);
+    t.start();
+    t.join();          // note the position
+}
+
+The only change is that join() is now INSIDE the loop. Roughly how long does this version take?",Still about 3 seconds,"About 12 seconds. join() inside the loop waits for each thread to finish before starting the next one, so the sleeps run one after another instead of overlapping",About 6 seconds,It deadlocks and never finishes,,2,"Measured: 12016 ms, versus 3002 ms with join() moved after the loop. A join() in the wrong place quietly removes every benefit of using threads at all.",2
+"Real code:
+
+public class Sleeper implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error"");
+        }
+    }
+}
+
+// Main
+Thread[] ts = new Thread[4];
+
+for (int i = 0; i < 4; i++) {
+    Sleeper task = new Sleeper();
+    ts[i] = new Thread(task);
+    ts[i].start();
+}
+
+for (int i = 0; i < 4; i++) {
+    ts[i].join();
+}
+
+Two separate loops - start them all, then wait for them all. How long, and why is this the right shape?","12 seconds, the same as joining inside one loop","About 3 seconds. Every thread is started before any waiting begins, so all four sleeps overlap and the second loop just collects them","About 3 seconds, but the count of finished threads will be wrong",It cannot compile - join() must directly follow start(),,2,Measured: 3002 ms. Start-all-then-join-all is the standard pattern precisely because it keeps the overlap while still guaranteeing everything is finished before you continue.,2
+"Real code:
+
+public class Sleeper implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error"");
+        }
+    }
+}
+
+// Main
+for (int i = 1; i <= 4; i++) {
+    Thread t = new Thread(new Sleeper());
+    t.start();
+}
+
+System.out.println(""loop done"");
+
+How long after the program starts does loop done get printed?","After about 3 seconds, once the threads have finished","Almost immediately - a few milliseconds. start() returns straight away and does not wait for the task, so main runs on while the threads sleep",After about 12 seconds,"It is never printed, because main is blocked by the threads",,2,"Measured at 3 ms. start() means 'begin this elsewhere and carry on', which is exactly why join() exists for the times you do need to wait.",2
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName() + "" Task running"");
+        for (int i = 0; i < 5; i++) {
+            System.out.println(Thread.currentThread().getName() + "" "" + i);
+        }
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + "" Task finished"");
+    }
+}
+
+One thread runs this MyTask. Roughly how long does that thread take, and where does nearly all the time go?","About 3 seconds, almost entirely in Thread.sleep(3000) - the six println calls take a negligible amount of time","About 3 seconds, mostly spent in the for loop","About 15 seconds, because the loop runs 5 times with a sleep each time",A few milliseconds - sleep does not block the thread that calls it,,2,"The sleep is outside the loop, so it happens once. Printing six lines is microseconds against a 3 second wait.",1
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class CounterRunnable implements Runnable {
+
+    private final Counter counter;
+
+    public CounterRunnable(Counter counter) {
+        this.counter = counter;
+    }
+
+    public void doWork() {
+        for (int i = 1; i <= 1000; i++) {
+            counter.increment();
+        }
+    }
+
+    @Override
+    public void run() {
+        doWork();
+    }
+}
+
+// Main - demo 3
+Counter c1 = new Counter();
+
+Runnable countRunner = new CounterRunnable(c1);   // both threads share ONE counter
+Thread p1 = new Thread(countRunner, ""person1"");
+Thread p2 = new Thread(countRunner, ""person 2"");
+
+p1.start();
+
+Thread.sleep(100);
+p2.start();
+
+System.out.println(p1.getState());
+System.out.println(p2.getState());
+
+p1.join();
+p2.join();
+
+System.out.println(c1.getCount());
+
+increment() sleeps 5000 ms and is synchronized. Two threads each call it 1000 times. Roughly how long before the final count is printed?",About 5 seconds - the two threads sleep at the same time,"About 10,000 seconds, roughly 2.8 hours. synchronized allows only one thread inside increment() at a time, so all 2000 sleeps happen one after another instead of overlapping","About 5000 seconds, roughly 1.4 hours, since the two threads share the work",About 100 seconds,,2,"2000 calls times 5 seconds = 10,000 seconds. The lock is what makes the sleeps queue up. This is why the demo can show the states but never actually reaches the final count in a class.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+You want the same demo to finish quickly in class while still showing the same three states. Which changes achieve that? (select all that apply)",Reduce Thread.sleep(5000) inside increment() to about 50 ms,Reduce the loop in CounterRunnable from 1000 iterations to about 10,Remove the synchronized keyword,Remove the sleep from increment() entirely,Increase the number of threads from 2 to 20,"1,2","Verified: 50 ms and 10 iterations gives the same TIMED_WAITING, WAITING and BLOCKED readings with a correct final count, in about a second. Removing synchronized breaks the count, and removing the sleep makes BLOCKED far too brief to observe.",2
+"Real code:
+
+// Main - demo 1
+Runnable r1 = new MyTask();          // MyTask sleeps 3000 ms
+Thread t1 = new Thread(r1, ""thread_1"");
+
+t1.start();
+
+Thread.sleep(100);
+System.out.println(t1.getState());
+
+// Main - demo 2
+Thread t2 = new Thread(r1, ""sleepy_thread"");   // MyTask sleeps 3000 ms
+
+Runnable r2 = new Waiter(t2);
+Thread t3 = new Thread(r2, ""waiter"");
+
+t2.start();
+t3.start();
+
+Thread.sleep(100);
+System.out.println(t3.getState());
+
+Demos 1 and 2 run one after the other, and main sleeps 100 ms in each. Roughly how much time does main itself spend on these two demos?","About 6 seconds, since each MyTask sleeps 3 seconds","About 200 ms. main only waits for its own two 100 ms sleeps - it never joins the worker threads, so it does not wait for their 3 second sleeps",About 3.2 seconds,Almost no time - Thread.sleep in main is ignored,,2,main's timing is driven purely by its own sleeps. The workers are still sleeping in the background when main moves on to demo 3.,2
+"Real code:
+
+// Main - demo 1
+Runnable r1 = new MyTask();          // MyTask sleeps 3000 ms
+Thread t1 = new Thread(r1, ""thread_1"");
+
+t1.start();
+
+Thread.sleep(100);
+System.out.println(t1.getState());
+
+MyTask's sleep is changed from 3000 ms to 50 ms, with main's Thread.sleep(100) left alone. What does the printed state become?",Still TIMED_WAITING,TERMINATED - the task's 50 ms sleep is already over by the time main wakes up after 100 ms and reads the state,"NEW, because the thread finished before being observed",BLOCKED,,2,A good trap: the demo only works because main's wait is SHORTER than the task's. Whenever you read another thread's state you are really asking 'where had it got to when I looked'.,2
+"Real code:
+
+public class Sleeper implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error"");
+        }
+    }
+}
+
+Four threads run Sleeper (3 s each) on a machine with just ONE core. How long until all four are done?",About 12 seconds - one core can only run one thread at a time,"Still about 3 seconds. Sleeping needs no core at all, so core count makes no difference to waiting",About 6 seconds,It depends on thread priorities,,2,"The dividing line again: waiting overlaps regardless of hardware. If Sleeper were computing fibonacci instead, one core really would force the work to take four times as long.",2
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName() + "" Task running"");
+        for (int i = 0; i < 5; i++) {
+            System.out.println(Thread.currentThread().getName() + "" "" + i);
+        }
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + "" Task finished"");
+    }
+}
+
+// Main
+Runnable myTask = new MyTask();
+Thread t1 = new Thread(myTask);
+t1.setName(""saikiran"");
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (1)
+
+t1.start();
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (2)
+
+t1.join();
+System.out.println(Thread.currentThread().getState());    // (3)
+System.out.println(t1.getName() + "" "" + t1.getState());   // (4)
+
+What state is printed at position (1), before start() has been called?",RUNNABLE,NEW,TIMED_WAITING,TERMINATED,,2,The Thread object exists but the JVM has not been asked for a thread yet. NEW is the only state you can observe before start().,1
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName() + "" Task running"");
+        for (int i = 0; i < 5; i++) {
+            System.out.println(Thread.currentThread().getName() + "" "" + i);
+        }
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + "" Task finished"");
+    }
+}
+
+// Main
+Runnable myTask = new MyTask();
+Thread t1 = new Thread(myTask);
+t1.setName(""saikiran"");
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (1)
+
+t1.start();
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (2)
+
+t1.join();
+System.out.println(Thread.currentThread().getState());    // (3)
+System.out.println(t1.getName() + "" "" + t1.getState());   // (4)
+
+What state is printed at position (2), immediately after t1.start()?",NEW,"RUNNABLE - the thread is now eligible to run. It is very unlikely to have reached the sleep yet, since main prints straight after starting it",TERMINATED,BLOCKED,,2,"Reading it a few hundred milliseconds later would instead show TIMED_WAITING, because by then the task has reached its sleep. The state you see depends entirely on when you look.",2
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        System.out.println(Thread.currentThread().getName() + "" Task running"");
+        for (int i = 0; i < 5; i++) {
+            System.out.println(Thread.currentThread().getName() + "" "" + i);
+        }
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + "" Task finished"");
+    }
+}
+
+// Main
+Runnable myTask = new MyTask();
+Thread t1 = new Thread(myTask);
+t1.setName(""saikiran"");
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (1)
+
+t1.start();
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (2)
+
+t1.join();
+System.out.println(Thread.currentThread().getState());    // (3)
+System.out.println(t1.getName() + "" "" + t1.getState());   // (4)
+
+What state is printed at position (4), after t1.join() has returned?",RUNNABLE,TERMINATED - join() only returns once that thread's run() has finished,NEW,WAITING,,2,"This is the reliable one. join() returning is itself the guarantee that the thread is finished, so the state after it can only be TERMINATED.",1
+"Real code:
+
+// Main
+Runnable myTask = new MyTask();
+Thread t1 = new Thread(myTask);
+t1.setName(""saikiran"");
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (1)
+
+t1.start();
+
+System.out.println(t1.getName() + "" "" + t1.getState());   // (2)
+
+t1.join();
+System.out.println(Thread.currentThread().getState());    // (3)
+System.out.println(t1.getName() + "" "" + t1.getState());   // (4)
+
+Position (3) prints Thread.currentThread().getState(). What can that line ever print, and why?","Any of the six states, depending on timing","RUNNABLE, always. You have to be running in order to execute the line that asks the question, so a thread can never catch itself in any other state","WAITING, because main has just come out of a join()","TERMINATED, because main is about to end",,2,"A genuinely useful thing to notice: getState() is only informative about OTHER threads. Asked about yourself, the answer is fixed.",2
+"Real code:
+
+public class MyTask implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error..."");
+        }
+    }
+}
+
+// Main - demo 1
+Runnable r1 = new MyTask();          // MyTask sleeps 3000 ms
+Thread t1 = new Thread(r1, ""thread_1"");
+
+t1.start();
+
+Thread.sleep(100);
+System.out.println(t1.getState());
+
+MyTask sleeps 3000 ms and main reads the state after only 100 ms. What is printed?",RUNNABLE,"TIMED_WAITING - the thread is inside Thread.sleep, which is a wait with a time limit",WAITING,BLOCKED,,2,"Verified output: TIMED_WAITING. Anything with a deadline - sleep(ms), join(ms), wait(ms) - lands in TIMED_WAITING rather than WAITING.",1
+"Real code:
+
+public class Waiter implements Runnable {
+
+    private Thread threadToWaitFor;
+
+    public Waiter(Thread threadToWaitFor) {
+        this.threadToWaitFor = threadToWaitFor;
+    }
+
+    @Override
+    public void run() {
+        try {
+            System.out.println(""start waiting "");
+            threadToWaitFor.join();
+            System.out.println(""enough waiting"");
+        } catch (InterruptedException e) {
+            System.out.println(""error..."");
+        }
+    }
+}
+
+// Main - demo 2
+Thread t2 = new Thread(r1, ""sleepy_thread"");   // MyTask sleeps 3000 ms
+
+Runnable r2 = new Waiter(t2);
+Thread t3 = new Thread(r2, ""waiter"");
+
+t2.start();
+t3.start();
+
+Thread.sleep(100);
+System.out.println(t3.getState());
+
+The Waiter calls threadToWaitFor.join() with no timeout. What state does t3 (the waiter thread) report?",TIMED_WAITING,"WAITING - join() with no argument waits for as long as it takes, so there is no time limit and the state is the untimed one","BLOCKED, because it is waiting for another thread","RUNNABLE, because join() does not change a thread's state",,2,"Verified output: WAITING. This demo exists purely to separate WAITING from TIMED_WAITING - same idea of not running, and the only difference is whether a deadline exists.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+// Main - demo 3
+Counter c1 = new Counter();
+
+Runnable countRunner = new CounterRunnable(c1);   // both threads share ONE counter
+Thread p1 = new Thread(countRunner, ""person1"");
+Thread p2 = new Thread(countRunner, ""person 2"");
+
+p1.start();
+
+Thread.sleep(100);
+p2.start();
+
+System.out.println(p1.getState());
+System.out.println(p2.getState());
+
+p1.join();
+p2.join();
+
+System.out.println(c1.getCount());
+
+In demo 3, p1 got into increment() first and is sleeping inside it. What state does p1 report, and why is it not BLOCKED?","BLOCKED, because it is inside a synchronized method","TIMED_WAITING. p1 already HOLDS the lock - it is not waiting for one, it is just sleeping. BLOCKED is only for a thread that wants a lock somebody else is holding","WAITING, because other threads are waiting on it","RUNNABLE, because it owns the lock",,2,Verified output: p1 prints TIMED_WAITING. Being inside a synchronized method says nothing about your state; what matters is whether you are waiting to get IN.,2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+// Main - demo 3
+Counter c1 = new Counter();
+
+Runnable countRunner = new CounterRunnable(c1);   // both threads share ONE counter
+Thread p1 = new Thread(countRunner, ""person1"");
+Thread p2 = new Thread(countRunner, ""person 2"");
+
+p1.start();
+
+Thread.sleep(100);
+p2.start();
+
+System.out.println(p1.getState());
+System.out.println(p2.getState());
+
+p1.join();
+p2.join();
+
+System.out.println(c1.getCount());
+
+p2 starts 100 ms later, calls increment(), and cannot get in because p1 holds the lock. What state does p2 report?","TIMED_WAITING, because increment() contains a sleep","BLOCKED - it is waiting to acquire the lock, which is the one and only meaning of that state","WAITING, because it is waiting for p1","NEW, because it has only just been started",,2,Verified output: p2 prints BLOCKED. Note it never reaches the sleep at all - it is stuck at the door of the method.,2
+A thread reports RUNNABLE. What does that actually tell you about whether it is executing on a core at this instant?,It is definitely executing on a core right now,"Nothing definite. Java's RUNNABLE covers both 'running on a core now' and 'ready to run but waiting for a free core' - the operating system knows the difference, Java does not expose it",It is definitely NOT executing yet - RUNNABLE only means ready,It means the thread has been started but run() has not begun,,2,"Worth being precise about, because thread-state diagrams often draw a separate Running box. getState() cannot show you that box.",2
+Match each cause to the state it produces. Which pairings are correct? (select all that apply),Thread.sleep(2000) -> TIMED_WAITING,join() with no timeout -> WAITING,waiting to enter a synchronized method another thread is inside -> BLOCKED,created but start() not yet called -> NEW,run() has returned -> RUNNABLE,"1,2,3,4","The last one is wrong: once run() has returned the thread is TERMINATED, and it can never go back to any other state.",2

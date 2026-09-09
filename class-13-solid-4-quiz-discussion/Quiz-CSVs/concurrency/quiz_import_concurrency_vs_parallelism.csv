@@ -1,0 +1,129 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+Two threads are running on a machine with only ONE core. Both have plenty of work to do and never wait for anything. What is actually happening?,"Both threads run at the same instant, so the work finishes in half the time","The core switches between them very fast. They take turns, so both make progress, but the total time is not reduced - that is concurrency without parallelism",The second thread is rejected because there is only one core,The second thread waits until the first one finishes completely,,2,"Concurrency is about several jobs being in progress at once. Parallelism is about several jobs actually executing at the same instant, which needs more than one core. On one core you get the first without the second.",2
+"Same two threads, now on a machine with two cores, still with plenty of work and no waiting. What changes?",Nothing changes - the operating system still makes them take turns,"Each thread can sit on its own core and genuinely run at the same instant, so the work really does finish in roughly half the time - that is parallelism",The threads must be rewritten to use both cores,Only one core is ever used by a single Java program,,2,"Same code, same threads, different hardware, different outcome. This is why 'is threading faster' cannot be answered by looking at the code alone.",2
+"Real code:
+
+public class Sleeper implements Runnable {
+
+    @Override
+    public void run() {
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            System.out.println(""error"");
+        }
+    }
+}
+
+Four threads each run this Sleeper on a machine with ONE core. Roughly how long until all four are done, and why?","12 seconds, because one core can only handle one sleep at a time","About 3 seconds. A sleeping thread is not using the core at all, so all four can wait at the same time even on a single core","3 seconds, but only because the JVM merges identical sleeps",Unpredictable - sleeping threads have no defined duration,,2,"This is the key difference from CPU work. Waiting needs no core, so waiting in parallel costs nothing. This is why threads help so much with network calls, file reads and database queries.",2
+"Real code:
+
+public class Fibonacci implements Runnable {
+
+    private int n;
+
+    public Fibonacci(int n) {
+        this.n = n;
+    }
+
+    private int getNthfib(int n) {
+        if (n == 1 || n == 2) {
+            return 1;
+        }
+        return getNthfib(n - 1) + getNthfib(n - 2);
+    }
+
+    @Override
+    public void run() {
+        System.out.println(getNthfib(n));
+    }
+}
+
+// Main
+int[] numbers = {6, 7, 8, 9};
+
+for (int n : numbers) {
+    Fibonacci task = new Fibonacci(n);
+    Thread t = new Thread(task);
+    t.start();
+}
+
+This is the fibonacci demo from class. It starts four threads for the numbers 6, 7, 8 and 9. Does this demo prove that threading made the work faster?",Yes - four threads means roughly four times faster,"No. getNthfib(9) is only 34, so each calculation takes microseconds. Creating a thread costs more than the work itself, so the timing shows nothing useful about speed","Yes, but only because fibonacci is recursive","No, because Runnable cannot be used for CPU work",,2,"The demo is good for showing thread creation and unpredictable output order. It is useless as a speed demo because the work is far too small. To show a real speedup the number has to be big enough to take real time, like fib(36) and up.",2
+"Real code:
+
+public class Fibonacci implements Runnable {
+
+    private int n;
+
+    public Fibonacci(int n) {
+        this.n = n;
+    }
+
+    private int getNthfib(int n) {
+        if (n == 1 || n == 2) {
+            return 1;
+        }
+        return getNthfib(n - 1) + getNthfib(n - 2);
+    }
+
+    @Override
+    public void run() {
+        System.out.println(getNthfib(n));
+    }
+}
+
+To turn the fibonacci example into an honest speed demo, what has to change?",Use extends Thread instead of implements Runnable,"Make n large enough that one calculation takes noticeable time (fib(36) and above), and time the whole batch with and without threads",Add a sleep inside getNthfib so the threads have time to start,Run it on a single core so the difference is clearer,,2,Adding a sleep would be dishonest here - it would turn a CPU test into a waiting test and prove something different. The fix is simply to make the CPU work big enough to measure.,2
+"16 tasks in total, split across N threads, on a 10-core machine
+(4 performance cores + 6 slower efficiency cores):
+
+  threads |  A: fib(36) CPU work  |  B: sleep(500) waiting
+  --------+-----------------------+-----------------------
+     1    |    358 ms   ( 1.0x)   |   8059 ms   ( 1.0x)
+     2    |    220 ms   ( 1.6x)   |   4033 ms   ( 2.0x)
+     4    |    128 ms   ( 2.8x)   |   2019 ms   ( 4.0x)
+     8    |    104 ms   ( 3.4x)   |   1010 ms   ( 8.0x)
+    16    |     85 ms   ( 4.2x)   |    505 ms   (16.0x)
+
+Look at column A only. The speedup climbs 1.0x, 1.6x, 2.8x, 3.4x, 4.2x and is clearly flattening. Why does it flatten?",Because the JVM limits a program to 4 threads,"Because CPU work needs a core to run on. Once every core is busy, extra threads just take turns, so more threads stop buying more speed",Because fib(36) is too small to measure properly,Because the threads start blocking each other on a lock,,2,There is no lock anywhere in that benchmark - each thread computes its own numbers independently. The ceiling comes purely from how many cores exist.,2
+"16 tasks in total, split across N threads, on a 10-core machine
+(4 performance cores + 6 slower efficiency cores):
+
+  threads |  A: fib(36) CPU work  |  B: sleep(500) waiting
+  --------+-----------------------+-----------------------
+     1    |    358 ms   ( 1.0x)   |   8059 ms   ( 1.0x)
+     2    |    220 ms   ( 1.6x)   |   4033 ms   ( 2.0x)
+     4    |    128 ms   ( 2.8x)   |   2019 ms   ( 4.0x)
+     8    |    104 ms   ( 3.4x)   |   1010 ms   ( 8.0x)
+    16    |     85 ms   ( 4.2x)   |    505 ms   (16.0x)
+
+Now look at column B. It is 2.0x, 4.0x, 8.0x, 16.0x - exactly linear, with no flattening at all. Why does the waiting workload behave so differently?",Because sleep is faster than computing fibonacci,"Because a sleeping thread does not need a core. Sixteen threads waiting cost about the same wall-clock time as one thread waiting, so the ceiling that limits column A does not apply",Because the JVM optimises repeated sleeps into a single sleep,Because column B used more cores than column A,,2,The two columns are the whole lesson side by side. CPU work is limited by hardware. Waiting is limited by almost nothing.,2
+"16 tasks in total, split across N threads, on a 10-core machine
+(4 performance cores + 6 slower efficiency cores):
+
+  threads |  A: fib(36) CPU work  |  B: sleep(500) waiting
+  --------+-----------------------+-----------------------
+     1    |    358 ms   ( 1.0x)   |   8059 ms   ( 1.0x)
+     2    |    220 ms   ( 1.6x)   |   4033 ms   ( 2.0x)
+     4    |    128 ms   ( 2.8x)   |   2019 ms   ( 4.0x)
+     8    |    104 ms   ( 3.4x)   |   1010 ms   ( 8.0x)
+    16    |     85 ms   ( 4.2x)   |    505 ms   (16.0x)
+
+The machine has 10 logical cores, yet column A only reaches 4.2x rather than about 10x. Which explanations are reasonable? (select all that apply)","The 10 cores are not equal - 4 are performance cores and 6 are slower efficiency cores, so the total is well below 10 full-speed cores",JIT compilation and garbage collection add noise to short measurements,Java programs can only ever use 4 cores,The tasks were secretly sharing a lock,"Splitting 16 tasks over 16 threads leaves each thread with only one task, so thread creation overhead becomes a larger share of the total","1,2,5","Nothing in Java caps you at 4 cores, and that benchmark shares no state at all. The realistic reasons are unequal cores, measurement noise on short runs, and per-thread overhead.",2
+"16 tasks in total, split across N threads, on a 10-core machine
+(4 performance cores + 6 slower efficiency cores):
+
+  threads |  A: fib(36) CPU work  |  B: sleep(500) waiting
+  --------+-----------------------+-----------------------
+     1    |    358 ms   ( 1.0x)   |   8059 ms   ( 1.0x)
+     2    |    220 ms   ( 1.6x)   |   4033 ms   ( 2.0x)
+     4    |    128 ms   ( 2.8x)   |   2019 ms   ( 4.0x)
+     8    |    104 ms   ( 3.4x)   |   1010 ms   ( 8.0x)
+    16    |     85 ms   ( 4.2x)   |    505 ms   (16.0x)
+
+You now run each workload with 200 threads instead of 16. Predict what happens to each column.",Both improve by roughly the same factor again,"A gets no better and probably slightly worse, since the cores are already full and more threads mean more switching. B still works fine, because 200 waiting threads still need no cores","Both get much worse, because 200 threads always exhausts memory",A improves and B gets worse,,2,"This is the practical reason a thread pool for CPU work is sized near the core count, while a pool for network or database work can be much larger.",2
+"A program spends almost all of its time waiting for replies from a payment provider over the network. Would adding threads help, and why?","No - the network is slow, so nothing can help","Yes, a great deal. While one thread waits for a reply it uses no core, so many requests can be in flight at once and the total time approaches the time of a single request","Yes, but only on a machine with as many cores as requests",No - only CPU work can be threaded,,2,"This is the same shape as column B in the benchmark. The waiting is the whole cost, and waiting overlaps for free.",2
+"A program resizes 10,000 images. Each resize is pure computation with no waiting, and the machine has 8 cores. Would adding threads help, and how much?",No - CPU work cannot be split across threads,"Yes, up to roughly 8x. This is real parallelism, and the ceiling is the number of cores, so about 8 threads is the useful maximum","Yes, and the more threads the better with no limit",Only if a sleep is added between images,,2,"The opposite case from the network example. Real speedup, but hard-capped by the hardware, so there is a sensible number of threads and going past it wastes effort.",2
+"Someone claims: 'threading always makes a program faster'. Using the two workloads from class, give the honest correction.","It is true, as long as you create enough threads","It is false. Threading helps when work can genuinely overlap - either on separate cores, or because threads are waiting rather than computing. If the work is tiny, or one core is already saturated, threads add cost and no benefit",It is true for CPU work but never for waiting,It is false - threading always makes programs slower because of switching,,2,"Both extremes are wrong. The fibonacci {6,7,8,9} demo is the concrete example of threads costing more than they save, and the benchmark is the example of them genuinely paying off.",2
+"Of the projects built earlier in this course - parking lot, vending machine, snake game - which would have genuinely benefited from threads?","All of them, since all real systems need threads","None of them. Each is request-and-response with no waiting inside a single operation, and no single operation is heavy enough to need several cores","Only the snake game, because it has a game loop","Only the vending machine, because it handles payments",,2,Worth saying out loud - it is also why the thread-safety problems noted in the parking lot review never actually showed up as visible bugs. Nothing was ever running concurrently.,1
+Which single question best decides whether threads will speed up a particular piece of work?,Is the code written with Runnable rather than extends Thread?,"While one unit of work is in progress, is the CPU idle because we are waiting, or is it busy computing? Waiting overlaps for free; computing needs another core",Does the machine have more than 4 GB of memory?,Is the work written recursively or with loops?,,2,One question separates the two columns of the benchmark and predicts the ceiling in each case. How the Runnable was written makes no difference to the speed at all.,2
+Concurrency and parallelism are often used as if they mean the same thing. State the difference in one sentence each.,They do mean the same thing in Java,"Concurrency is several jobs being in progress at the same time, which is possible on one core by taking turns. Parallelism is several jobs actually executing at the same instant, which needs more than one core",Concurrency needs many cores; parallelism works on one core,Concurrency is about threads; parallelism is about processes,,2,"Concurrency is a way of structuring work. Parallelism is a property of the hardware actually running it. You can have concurrency with no parallelism, which is exactly the one-core case.",2

@@ -1,0 +1,630 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    public void increment() {          // no synchronized
+        count++;
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+count++ looks like a single instruction. What does the machine actually do when it runs?",One single step that cannot be interrupted,"Three separate steps: read the current value, add 1 to it, write the new value back. A thread can be interrupted between any two of them","Two steps: read and write, with the addition done by the CPU register for free",It depends on whether count is declared private,,2,That gap between read and write is where everything goes wrong. This is why count++ is not safe to run from two threads even though it is one line of source code.,2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    public void increment() {          // no synchronized
+        count++;
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+Two threads both call increment(). count is currently 5. Walk through the worst case: what value ends up stored after BOTH threads have incremented?","7, which is correct","6. Both threads read 5, both add 1 to get 6, and both write 6 - so two increments happened but only one was recorded","5, because both writes cancel out",It throws an exception when two threads write at once,,2,"This is a lost update. Nothing crashes and no error appears - the number is just quietly wrong, which is what makes it so hard to notice.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    public void increment() {          // no synchronized
+        count++;
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class CounterRunnable implements Runnable {
+
+    private final Counter counter;
+
+    public CounterRunnable(Counter counter) {
+        this.counter = counter;
+    }
+
+    public void doWork() {
+        for (int i = 1; i <= 1000; i++) {
+            counter.increment();
+        }
+    }
+
+    @Override
+    public void run() {
+        counter.doWork();
+    }
+}
+
+// Main
+Counter c1 = new Counter();
+
+Runnable countRunner = new CounterRunnable(c1);   // ONE counter, shared
+Thread p1 = new Thread(countRunner, ""person1"");
+Thread p2 = new Thread(countRunner, ""person 2"");
+
+p1.start();
+p2.start();
+p1.join();
+p2.join();
+
+System.out.println(c1.getCount());
+
+Two threads each call increment() 1000 times, with NO synchronized keyword. What will the final count be?",Always exactly 2000,"Somewhere between 1000 and 2000, and a different number nearly every run - however many updates got lost that time",Always exactly 1000,"Always 0, because the two threads cancel each other out",,2,"It can never exceed 2000 and it will rarely be below 1000, but the exact figure is luck. On a fast machine with a short loop you may even see 2000 by chance, which is the trap in the next question.",2
+Your unsynchronized counter prints 2000 correctly on your laptop every time you run it. A colleague runs the same code and gets 1873. Who has the bug?,Your colleague - their machine is faulty,"The code has the bug in both cases. Yours is broken too; it just happened not to show. Timing-dependent bugs appear or hide based on machine speed, core count and load",Nobody - 1873 is an acceptable result for threaded code,"The JVM version, which must be different",,2,This is why 'it works on my machine' means nothing here. Correctness cannot be established by running it a few times and liking the answer.,2
+Why is a bug that gives the wrong answer only SOMETIMES harder to deal with than one that is wrong every time?,It is not - both are equally easy to fix,"Because you cannot reproduce it on demand. Tests pass, you cannot step through it in a debugger reliably, and it tends to appear in production under load rather than on your laptop",Because intermittent bugs cannot be fixed at all,Because the compiler cannot see intermittent bugs,,2,A bug that is always wrong gets found and fixed the same day. A bug that is wrong one run in fifty survives for months.,2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+With synchronized added, what is the final count for two threads doing 1000 increments each?",Between 1000 and 2000 depending on timing,"Exactly 2000, every single run. Only one thread can be inside increment() at a time, so no read-add-write sequence can overlap another","Exactly 1000, because the lock makes one thread wait forever","2000, but only on a single-core machine",,2,"Verified in class. The keyword converts a timing-dependent result into a deterministic one, which is the whole point.",1
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+The comment in the class marks increment() as the critical section. What does that term mean here?",Any method that is slow enough to matter,The stretch of code that touches shared data and must not be run by two threads at the same time if the data is to stay correct,Any method that has been marked synchronized,The part of the program that runs first,,2,"Note the direction of the reasoning: increment() is not critical BECAUSE it is synchronized. It was identified as critical first, which is the reason the keyword was added.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+getCount() is not synchronized, yet the class reads it and gets a correct answer. Why is that safe HERE, and when would it stop being safe?","It is always safe, because reading cannot corrupt anything","It is safe only because it is called after p1.join() and p2.join(), so no thread is still changing count. Calling it while the threads were running could return a stale or half-updated value",It is safe because getCount() has no arguments,It is never safe and the code is simply wrong,,2,"The join() calls are doing the work here, not the method itself. A reader that runs alongside the writers needs the lock too.",2
+"Real code:
+
+public class BankAccount {
+
+    private int balance = 1000;
+
+    public void withdraw(int amount) {
+        if (balance >= amount) {          // check
+            balance = balance - amount;   // then act
+            System.out.println(""paid out "" + amount);
+        } else {
+            System.out.println(""declined"");
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+public class WithdrawTask implements Runnable {
+
+    private final BankAccount account;
+
+    public WithdrawTask(BankAccount account) {
+        this.account = account;
+    }
+
+    @Override
+    public void run() {
+        account.withdraw(800);
+    }
+}
+
+The balance is 1000. Two threads each run a WithdrawTask for 800. What can happen, and which lines are the critical section?",Only one succeeds - the second sees the reduced balance and is declined,"Both can succeed. Both threads can pass the balance >= amount check while the balance is still 1000, and both then deduct - leaving -600. The critical section is the check and the deduction together","Both are declined, because they arrive at the same time",The second thread throws an exception because balance would go negative,,2,"This is the classic check-then-act race. Guarding only the subtraction would not help - the check and the action have to be inside the same lock, otherwise another thread can slip in between them.",2
+"Real code:
+
+public class BankAccount {
+
+    private int balance = 1000;
+
+    public void withdraw(int amount) {
+        if (balance >= amount) {          // check
+            balance = balance - amount;   // then act
+            System.out.println(""paid out "" + amount);
+        } else {
+            System.out.println(""declined"");
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+Which fix actually prevents the double withdrawal?",Make balance private - it already is,"Mark withdraw() as synchronized, so the check and the deduction happen together with no other thread able to enter in between",Synchronize only the line balance = balance - amount,Change balance from int to double,,2,Locking just the subtraction leaves the gap between the check and the act wide open. The lock has to span the decision AND the action based on it.,2
+"Real code:
+
+public class SeatBooking {
+
+    private boolean[] booked = new boolean[50];
+
+    public void book(int seat, String customer) {
+        if (!booked[seat]) {              // check
+            booked[seat] = true;          // then act
+            System.out.println(customer + "" got seat "" + seat);
+        } else {
+            System.out.println(""seat "" + seat + "" already taken"");
+        }
+    }
+}
+
+public class BookingTask implements Runnable {
+
+    private final SeatBooking booking;
+    private final String customer;
+
+    public BookingTask(SeatBooking booking, String customer) {
+        this.booking = booking;
+        this.customer = customer;
+    }
+
+    @Override
+    public void run() {
+        booking.book(12, customer);
+    }
+}
+
+Two customers try to book seat 12 at the same instant. What can go wrong?",Nothing - the boolean array handles this correctly,"Both can see booked[12] as false, both set it to true, and both are told they got the seat - one customer has paid for a seat that someone else is also holding",The array throws ArrayIndexOutOfBoundsException,The second booking silently overwrites the first with no visible effect,,2,"Same shape as the bank account, different domain: check that it is free, then claim it. Nothing is corrupted in memory - the array is fine - but the business outcome is wrong.",2
+"Real code:
+
+// From the PARKING LOT project (class-29)
+public Ticket parkVehicle(IVehicle vehicle) {
+    ISpot spot = spotFinder.findAvailableSpot(vehicle);   // finds a free spot
+    spot.assign();                                        // then claims it
+
+    Ticket ticket = new Ticket(vehicle, spot, System.currentTimeMillis());
+    ticketManager.save(ticket);
+    return ticket;
+}
+
+This is parkVehicle() from the parking lot project. If two cars arrived at exactly the same moment, what is the risk, and what is the name for this shape of bug?",No risk - findAvailableSpot() only returns spots that are free,"Both calls can be handed the SAME free spot, because finding it and claiming it are two separate steps with a gap in between. It is the same check-then-act race as the bank account and the seat booking",The second car would get a null spot and crash,"The tickets would be saved in the wrong order, but the spots would be fine",,2,This was written down during the parking lot review as 'isAvailable() check plus assign() are separate steps'. The reason it never actually bit is simply that nothing in that project ever ran two threads.,2
+"Real code:
+
+// From the VENDING MACHINE project (class-34)
+if (!machine.canMakeChange(change)) {     // check
+    machine.resetTransaction();
+    throw new ChangeUnavailableException(""cannot make change of "" + change);
+}
+
+slot.dispenseOne();
+machine.releaseChange(change);            // then act
+
+This is the vending machine's change handling. Identify the same pattern.","There is no shared state here, so no race is possible","canMakeChange() checks the reserve and releaseChange() reduces it, with a dispense in between - so two purchases could both be told there is enough change and both then draw from a reserve that only covered one",The exception makes it safe,It is safe because resetTransaction() is called on the failure path,,2,"Three projects, three domains, one shape: parking spots, seats, and coins in a change reserve. Learning to spot the shape is the transferable skill.",2
+"Real code:
+
+// From the VENDING MACHINE project (class-34)
+private static VendingMachine instance;
+
+public static VendingMachine getInstance() {
+    if (instance == null)
+        instance = new VendingMachine();
+    return instance;
+}
+
+This getInstance() has the same shape as the others. What can two threads calling it at the same time produce?",Always the same single instance - that is what the null check guarantees,"Two different VendingMachine objects. Both can see instance as null, both construct one, and each caller walks away with a different machine holding different slots and a different change reserve",A NullPointerException on the second call,Nothing - static fields are automatically thread-safe,,2,"Check-then-act again, this time deciding whether to build something. The snake game's HighScoreRegistry avoided it by creating the instance in a static final field instead, so there is no check to lose.",2
+"Real code:
+
+public class OrderLog {
+
+    private final List<String> orders = new ArrayList<>();
+
+    public void add(String order) {
+        orders.add(order);
+    }
+
+    public int size() {
+        return orders.size();
+    }
+}
+
+public class LogTask implements Runnable {
+
+    private final OrderLog log;
+    private final String name;
+
+    public LogTask(OrderLog log, String name) {
+        this.log = log;
+        this.name = name;
+    }
+
+    @Override
+    public void run() {
+        for (int i = 1; i <= 500; i++) {
+            log.add(name + ""-"" + i);
+        }
+    }
+}
+
+Two threads each add 500 entries to the same OrderLog. What is the critical section, and what can go wrong?",Nothing can go wrong - ArrayList handles multiple threads,"orders.add() is the critical section. ArrayList is not built for concurrent use, so size() can end up below 1000, entries can be lost, and in the worst case the internal array resize corrupts and throws",Only the size() method is at risk,The entries would be out of order but all 1000 would be present,,2,"The same lost-update idea as count++, one level up: add() reads a size, writes a slot and updates the size. Marking add() synchronized fixes it.",2
+"Real code:
+
+public class SalesTotal {
+
+    private double total = 0.0;
+
+    public void addSale(double amount) {
+        total = total + amount;
+    }
+
+    public double getTotal() {
+        return total;
+    }
+}
+
+Several threads call addSale() with different amounts. Is total = total + amount safe?","Yes, because addition is a single operation","No. It is read, add, write - exactly the same three steps as count++, so sales can be lost. It needs synchronized","Yes, because double is a primitive type","Yes, as long as no two threads pass the same amount",,2,The shape does not care what the variable is called or what type it has. Any read-then-write of shared data from two threads is the same problem.,2
+"Real code:
+
+public class PriceList {
+
+    private final Map<String, Double> prices = new HashMap<>();
+
+    public PriceList() {
+        prices.put(""chips"", 2.50);
+        prices.put(""soda"", 1.75);
+    }
+
+    // nothing ever calls put() after the constructor
+    public double priceOf(String item) {
+        return prices.get(item);
+    }
+}
+
+Several threads call priceOf() at the same time. Nothing ever calls put() after the constructor finishes. Does this need synchronized?",Yes - every shared object needs a lock,"No. The map is never modified after construction, and concurrent reads of unchanging data cannot interfere. Adding a lock here would only make it slower","Yes, because HashMap is not thread-safe","Only priceOf() needs the lock, not the constructor",,2,An important counter-example. Shared data is not automatically a critical section - the danger comes from shared data that CHANGES. Locking read-only data is pure cost.,2
+"Real code:
+
+public class ReportTask implements Runnable {
+
+    private final int n;
+
+    public ReportTask(int n) {
+        this.n = n;
+    }
+
+    @Override
+    public void run() {
+        int total = 0;                       // local
+        for (int i = 1; i <= n; i++) {
+            total = total + i;
+        }
+        System.out.println(""total is "" + total);
+    }
+}
+
+Four threads each run their own ReportTask. Is total a critical section?",Yes - four threads are updating total,"No. total is a local variable inside run(), so every thread gets its own separate copy. Nothing is shared, so nothing needs a lock","Yes, because the loop modifies it repeatedly",Only if n is the same for all four threads,,2,"The other essential counter-example: locals live per call, so per thread. Only fields of a shared object, or static fields, can be contested.",2
+"Across the bank account, the seat booking, the parking spot and getInstance(), what are the two ingredients that must BOTH be present for a race condition to exist?","Two or more threads, and a slow method","Data that is shared between the threads, AND at least one thread changing it. Remove either ingredient and the race disappears","A synchronized keyword that is missing, and a loop","Multiple cores, and a shared object",,2,This is the test to apply to any piece of code. The price list showed shared-but-unchanging is fine; the report task showed changing-but-not-shared is fine. Trouble needs both.,2
+"Real code:
+
+public class BankAccount {
+
+    private int balance = 1000;
+
+    public void withdraw(int amount) {
+        if (balance >= amount) {          // check
+            balance = balance - amount;   // then act
+            System.out.println(""paid out "" + amount);
+        } else {
+            System.out.println(""declined"");
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+public class SeatBooking {
+
+    private boolean[] booked = new boolean[50];
+
+    public void book(int seat, String customer) {
+        if (!booked[seat]) {              // check
+            booked[seat] = true;          // then act
+            System.out.println(customer + "" got seat "" + seat);
+        } else {
+            System.out.println(""seat "" + seat + "" already taken"");
+        }
+    }
+}
+
+Both of these have the shape 'check a condition, then act on it'. Why is it not enough to lock only the action?",It is enough - the action is the only part that changes data,"Because another thread can run between the check and the action, making the checked condition false by the time you act on it. The decision and the action have to be one indivisible unit",Because the check is slower than the action,Because Java does not allow locking a single statement,,2,"The most common way a lock gets added and still fails to fix anything. The lock has to cover the whole decision, not just the write at the end.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+When a thread enters this synchronized method, what exactly does it acquire a lock on?","The increment() method, so no thread anywhere can run that method",The Counter OBJECT it was called on. Another thread can freely run increment() on a DIFFERENT Counter instance at the same time,"The Counter class, so all Counter objects are locked together",The count field only,,2,A synchronized instance method locks 'this'. That is why the demo has to hand both threads the SAME Counter for the contention to happen at all.,2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+// Main - two separate counters this time
+Counter a = new Counter();
+Counter b = new Counter();
+
+Thread p1 = new Thread(new CounterRunnable(a), ""person1"");
+Thread p2 = new Thread(new CounterRunnable(b), ""person 2"");
+
+p1.start();
+p2.start();
+
+Each thread now has its OWN Counter. Will p2 ever report BLOCKED?","Yes - increment() is synchronized, so only one thread can be in it","No. The lock is on the object, and they are locking different objects, so neither ever waits for the other. Each counter ends at 1000","Yes, because both threads run the same CounterRunnable class","No, and the counts will be wrong because there is no shared lock",,2,Turning the class-41 demo into this version is the clearest way to show what the lock is attached to. No sharing means no contention and no need for the keyword at all.,2
+"Real code:
+
+public class Inventory {
+
+    private int stock = 100;
+    private int sold = 0;
+
+    public synchronized void sell() {
+        stock--;
+        sold++;
+    }
+
+    public synchronized void restock(int units) {
+        stock = stock + units;
+    }
+}
+
+Thread A is inside sell(). Thread B calls restock() on the SAME Inventory object. Can B proceed?","Yes - they are different methods, so they use different locks","No. Both are synchronized instance methods, so both need the lock on that same object. B waits until A leaves sell()","Yes, because restock() only increases stock",Only if stock is currently above zero,,2,"There is one lock per object, not one per method. This is correct here - both methods touch stock, so they genuinely must not overlap - but it does mean unrelated synchronized methods block each other too.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class Counter {
+
+    private int count = 0;
+
+    public void increment() {
+        synchronized (this) {
+            count++;
+        }
+        try {
+            Thread.sleep(5000);              // now OUTSIDE the lock
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+}
+
+The second version keeps the lock only around count++ and moves the sleep outside it. Is the count still correct, and what else changes?","The count becomes unreliable, because the lock is now too small","The count is still exactly 2000 - count++ is fully protected. What changes is that the two threads can now sleep at the same time instead of taking turns, so it finishes far faster",Nothing changes at all,It no longer compiles - synchronized blocks cannot be used on this,,2,"The lock only has to cover the shared data, not everything nearby. Shrinking it to the smallest correct region keeps correctness and removes most of the waiting.",2
+Does adding synchronized make a program faster or slower?,"Faster, because it stops threads interfering with each other","Slower. Threads take turns instead of running together, and acquiring the lock costs a little. You accept that cost because the alternative is a wrong answer",It makes no difference to speed,"Faster on multiple cores, slower on one core",,2,"Worth stating plainly. synchronized is not an optimisation - it is a correctness tool with a performance cost, which is why you make the locked region as small as it can safely be.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+increment() sleeps for 5 seconds while HOLDING the lock. Why is that right for this demo and wrong in real code?",It is correct in both cases - locks should be held during slow work,"For the demo it is essential: holding the lock for a long time is the only reason BLOCKED is visible. In real code it is bad, because every other thread is stuck waiting while nothing useful happens",It is wrong in both cases - the demo should not need a sleep,It is fine in real code as long as the sleep is under 10 seconds,,2,"The rule for real code is to never do anything slow - sleeping, network calls, file reads - while holding a lock. Say so during the demo, or someone copies the pattern into something that matters.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class CounterRunnable implements Runnable {
+
+    private final Counter counter;
+
+    public CounterRunnable(Counter counter) {
+        this.counter = counter;
+    }
+
+    public void doWork() {
+        for (int i = 1; i <= 1000; i++) {
+            counter.increment();
+        }
+    }
+
+    @Override
+    public void run() {
+        counter.doWork();
+    }
+}
+
+Two threads, 1000 iterations each, and a 5 second sleep inside the synchronized method. Why does this take about 2.8 hours rather than about 1.4?",Because thread switching adds overhead on every iteration,Because the lock lets only one thread sleep at a time. All 2000 sleeps happen one after another - 2000 times 5 seconds - instead of the two threads sleeping in parallel,Because sleep() is inaccurate over long runs,Because the count has to be recalculated after each increment,,2,If the sleep were outside the lock the two threads would overlap and it would take roughly half as long. The lock is what removes the overlap.,2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+You keep the 5 second sleep but move it outside the synchronized block, as in the earlier version. Roughly how long does the same 2 x 1000 run now take?",Still about 2.8 hours,"About 1.4 hours - each thread does its own 1000 sleeps, but the two threads now sleep at the same time, so the total is halved",About 5 seconds,About 10 seconds,,2,"Still far too long for a class, which is why the real fix for the demo is a much smaller sleep. But it does show precisely what the lock was costing.",2
+"Real code:
+
+public class Counter {
+
+    private int count = 0;
+
+    // critical section
+    public synchronized void increment() {
+        count++;
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            System.out.println(""Interrupted"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+// Main
+p1.start();
+
+Thread.sleep(100);
+p2.start();
+
+System.out.println(p2.getState());
+
+p2 is started and immediately its state is printed as BLOCKED. How long will p2 stay BLOCKED, given the code above?","A few milliseconds, until the scheduler gives it a turn","Nearly 5 seconds for its first entry, because p1 holds the lock for the whole duration of its sleep - and it will keep hitting that wait on almost every one of its 1000 iterations",It stays BLOCKED forever - this is a deadlock,"Exactly 100 ms, matching main's sleep",,2,Note this is not a deadlock. p2 does get in eventually and finishes correctly; it just spends almost all of its life waiting.,2
+"Summarise the trade-off that the counter demo demonstrates, in one sentence.",synchronized makes threaded code both faster and correct,synchronized buys a correct answer - exactly 2000 every time - and the price is that the threads no longer run at the same time inside the locked region,synchronized should be added to every method to be safe,synchronized is only needed when threads run on different cores,,2,Both halves matter. Adding it everywhere would make a program correct and needlessly slow; the skill is identifying which regions genuinely need it and keeping them small.,2
