@@ -1,0 +1,87 @@
+Class 41 — Thread States Demo + Synchronization
+
+
+FILES WE WROTE
+  MyTask.java           a job that just sleeps 3 seconds
+  Waiter.java           a job that waits for another thread to finish
+  Counter.java          a shared number, with a synchronized increment()
+  CounterRunnable.java  a job that calls increment() 1000 times
+  Main.java             runs all 3 demos
+
+
+DEMO 1 — TIMED_WAITING
+  did     started t1 with MyTask (sleeps 3s), waited 100ms, printed its state
+  why     sleep() means "wait for a set amount of time"
+          because there is a time limit, the state is TIMED_WAITING
+  got     TIMED_WAITING
+
+
+DEMO 2 — WAITING
+  did     t2 sleeps 3s. t3 runs Waiter, which calls t2.join().
+          printed t3's state
+  why     join() with no number means "wait as long as it takes"
+          no time limit, so the state is WAITING (not TIMED_WAITING)
+  got     WAITING
+
+  the difference in one line:
+      waiting with a time limit     -> TIMED_WAITING   (sleep, join(500))
+      waiting with no time limit    -> WAITING         (join(), wait())
+  both just mean "this thread is not running right now"
+
+  side note: we reused the same MyTask object for t1 and t2.
+  we could only do that because it is a Runnable. A Thread subclass
+  cannot be reused like this (the point from class 40)
+
+
+DEMO 3 — BLOCKED + synchronized
+  did     p1 and p2 both use the SAME Counter. increment() is synchronized.
+          started p1, waited 100ms, started p2, printed both states
+  got     p1 = TIMED_WAITING, p2 = BLOCKED, final count = 2000
+
+  why p2 is BLOCKED
+          synchronized means only one thread can be inside increment() at a time
+          p1 got in first and is sleeping in there, still holding the lock
+          p2 wants in, cannot get in, so it waits -> BLOCKED
+          BLOCKED only ever means one thing: waiting for a lock
+
+  why we need synchronized at all
+          count++ looks like one step but is really three:
+             read count -> add 1 -> write it back
+          without the lock, both threads can read 5, both write 6,
+          and one of the two increments just disappears
+          with the lock they take turns, so nothing gets lost -> exactly 2000
+
+  the trick that makes it visible
+          the sleep(5000) is INSIDE the lock. That holds the lock for a long
+          time, which is the only reason we can catch p2 in BLOCKED
+
+
+THINGS TO FIX
+  1. Right now the program needs about 2.8 hours to print 2000.
+     2000 calls, 5 seconds each, and they take turns = 10,000 seconds.
+     For class, use sleep of about 50ms, or 10 loops instead of 1000.
+     (I tested it small: same states, count came out right)
+
+  2. The comment "racing is happening" in CounterRunnable is no longer true.
+     increment() is synchronized now, so there is no race and the answer is
+     always 2000. Either remove that comment, or better: run it ONCE without
+     synchronized first so everyone sees the count come out wrong, then add
+     the keyword and run it again.
+
+  3. getCount() is not synchronized. It is fine here only because we call it
+     after both threads are finished. It would not be safe while they run.
+
+  4. Sleeping while holding a lock is good for THIS demo but a bad idea in
+     real code. Worth saying out loud so nobody copies it.
+
+  5. p2.getState() is a bit lucky. p2 had only just started, so it could show
+     RUNNABLE if we read it too early. 100ms is enough in practice.
+
+
+MAIN POINTS
+  - each state has one clear cause:
+        sleeping            -> TIMED_WAITING
+        waiting on join()   -> WAITING
+        waiting for a lock  -> BLOCKED
+  - BLOCKED is always about locks, nothing else
+  - synchronized stops updates getting lost; the cost is threads take turns
