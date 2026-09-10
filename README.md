@@ -1,129 +1,224 @@
 # FLM-system-design
 
-Java + OOP fundamentals course. Each folder below is one class session.
+Java + OOP course. Each folder below is one class.
+
+Roughly five blocks:
+- **Classes 1–9** — Java and OOP basics, ending with a small Splitwise app
+- **Classes 10–13** — SOLID principles
+- **Classes 14–25** — design patterns, one or two per class
+- **Classes 26–37** — three full design projects: parking lot, vending machine, snake game
+- **Classes 38 onwards** — threads and concurrency
+
+---
 
 ## class-1-Introduction-setup
-Dev environment setup: JDK 21, IntelliJ IDEA, GitHub/Git, OpenAI Codex CLI, and Wispr Flow (voice-to-text) for AI-assisted coding.
+- Setting up the machine: JDK, IntelliJ, Git and GitHub
+- AI tools for coding: Codex CLI, and Wispr Flow for voice input
 
 ## class-2-java-basics
-Core Java syntax and classes — the basics needed before writing real OOP code.
+- Core Java syntax and classes
+- The minimum needed before writing real OOP code
 
 ## class-3-Debugging-IntellJ
-Debugging in IntelliJ: breakpoints, stepping through code, inspecting objects and classes at runtime.
+- Debugging in IntelliJ: breakpoints and stepping through code line by line
+- Looking inside objects while the program is running
 
 ## class-4-Inheritance
-Encapsulation and inheritance. `Dog` / `GermanShefard extends Dog` example showing a subclass inheriting behavior (`doBark()`) from its parent.
+- Encapsulation: keeping data private and controlling who can touch it
+- Inheritance: a child class gets its parent's behaviour for free
+- Example: a dog breed that inherits barking from `Dog`
 
 ## class-5-polymorphism
-Runtime polymorphism via `IDog` interface (`Labrador`, `Pomeranian` overriding `doBark()`, dispatched through `DogSoundManager`) plus method overloading in `Student.print()`.
+- The same method call doing different things depending on the object behind it
+- Example: different dog breeds each barking their own way, called through one common type
+- Also method overloading: same method name, different arguments
 
 ## class-6-abstraction
-Abstraction with the `IDiscount` interface and interchangeable implementations (`MembershipDiscount`, `CreditCardDiscount`, `CouponDiscount`) — same interface, swappable logic.
+- One interface, several implementations that can be swapped freely
+- Example: membership, credit card and coupon discounts behind one discount interface
+- The caller does not need to know which one it got
 
 ## class-7-splitwise-1
-Design session for a Splitwise-style expense-splitting app — sketching the OOP model (users, groups, expenses, splits) before writing code.
+- First real design session, no code yet
+- Sketching the model for a Splitwise-style app: users, groups, expenses, splits
 
 ## class-8-splitwise-code
-Implementation of the Splitwise design: `User`, `Group`, `Expense` with polymorphic split strategies (`EqualExpense`, `ExactAmountExpense`, `PercentageExpense`) — ties together inheritance, polymorphism, and abstraction from earlier classes.
+- Builds the design from class-7
+- Three ways to split a bill (equal, exact amount, percentage) behind one common type
+- First time inheritance, polymorphism and abstraction are all used together
 
 ## class-9-splitwise-code-complete
-Finished, working Splitwise app: creates users/groups, adds equal and percentage-split expenses, and computes each member's running balance end-to-end (`Splitwise`, `Group.getBalance()`).
+- The finished, working app
+- Creates users and groups, adds expenses, and works out what each person owes
 
 ## class-10-SOLID-1
-SOLID principles, part 1 — theory on decoupling, covering the Single Responsibility and Open/Closed principles.
+- SOLID part 1, theory
+- Single Responsibility and Open/Closed
 
 ## class-11-Solid-2
-SOLID principles, part 2 — recaps bad SRP/OCP code (`ShapeCalculator` with if-else chains per shape for area/volume) and introduces the Liskov Substitution Principle: `Line implements Shape` but throws `UnsupportedOperationException` on `getArea()`/`getVolume()` since a 1D shape has neither, forcing `AreaCalculator` to defensively `instanceof`-check and skip it — a textbook LSP violation.
+- SOLID part 2
+- Starts from bad code: one calculator with a long if-else chain per shape
+- Liskov Substitution: a `Line` claims to be a shape but has no area or volume, so callers are forced to special-case it
+- Lesson: a child class that cannot keep the parent's promises breaks everyone using it
 
 ## class-12-solid-3
-SOLID principles, part 3 — the fix. Splits the fat `Shape` interface into `Shape1D`/`Shape2D`/`Shape3D` (Interface Segregation fixed), makes `AreaCalculator`/`VolumeCalculator` take their shape list via constructor injection instead of creating it internally (Dependency Inversion fixed), and removes the `instanceof` check entirely since every `Shape2D` now honestly honours the `getArea()` contract (Liskov fixed). Closes out L, I, and D of SOLID.
+- SOLID part 3 — fixing the class-11 code
+- Splits one big interface into 1D / 2D / 3D, so nothing has to implement methods it cannot support
+- Calculators are handed the data they work on instead of creating it themselves
+- The special-case checks disappear on their own once the interfaces are honest
 
 ## class-13-solid-4-quiz-discussion
-SOLID part 4 and quiz discussion, plus a SOLID reference PDF. This folder is also the single home for every quiz in the course — `Quiz-CSVs/` holds 33 files and roughly 880 questions in the FLM import schema (`questionText, option1..option5, correctOptions, correctOptionExplanation, points`), grouped as `oops/` (abstraction, inheritance, polymorphism), `solid/` (srp, ocp, lsp, isp, dip), `design-patterns/` (one file per pattern taught), `concurrency/` (the threading classes), and one folder per LLD project — `parking-lot/`, `vending-machine/`, `snake-game/`. `quiz_import_template.csv` at the top level is the blank import format sample, not a quiz. The project quizzes are written against the repo's own code: each question quotes the real class it is about and asks what a decision buys or what breaks without it, including the defects found in class — the shared-instance `SpotFactory` cache, the change reserve being updated from the wrong payment method, the `occupied`/`body` desync, the `spawnFood()` hang on a full board.
+- SOLID part 4 and quiz discussion, plus a SOLID reference PDF
+- Also the home for **every quiz in the course** — `Quiz-CSVs/`, 33 files, around 880 questions
+- Grouped into `oops/`, `solid/`, `design-patterns/`, `concurrency/`, and one folder per project: `parking-lot/`, `vending-machine/`, `snake-game/`
+- `quiz_import_template.csv` is the blank format sample, not a quiz
+- The project quizzes quote real code from this repo, including the bugs we found in class
 
 ## class-14-design-pattern-begin-strategypattern-1
-Intro to design patterns — Strategy Pattern, part 1 (theory).
+- Intro to design patterns
+- Strategy pattern, part 1 (theory)
 
 ## class-15-strategy-pattern-2
-Strategy Pattern, part 2 (theory continued).
+- Strategy pattern, part 2 (theory continued)
 
 ## class-16-Template-Pattern
-Template Method Pattern: abstract `BeverageMaker` defines the fixed algorithm skeleton (`boilWater → brew → pourInACup → addCondiments`), with `CoffeeMaker`/`TeaMaker` overriding only the varying steps (`brew()`, `addCondiments()`).
+- Template Method: the parent fixes the order of the steps, children fill in only the steps that differ
+- Example: making a hot drink — boil, brew, pour, add condiments — where only brewing and condiments change between tea and coffee
 
 ## class-17-payment-processor-template-pattern
-Template Pattern applied to a real scenario: abstract `PaymentProcessor.processOrder()` fixes the steps (validate → OTP check → create payment → pay → log), while `CardPaymentProcessor`/`CashPaymentProcessor`/`UPIPaymentProcessor` each supply their own `createPayment()` via `IPayment` implementations (`CardPayment`, `CashPayment`, `UPIPayment`).
+- The same pattern on something real: paying for an order
+- The steps and their order are fixed: validate, check OTP, create payment, pay, log
+- Card, cash and UPI each supply only their own payment step
 
 ## class-18-Builder
-Builder Pattern: compares a `UserProfile` with one bulky 9-arg constructor (order-dependent, easy to mis-call) against a fluent `Builder` inner class (`.name(...).email(...).age(...).build()`) that reads clearly and survives field-order/field-count changes.
+- Compares one constructor with nine arguments against a step-by-step builder
+- The long constructor is easy to call wrongly and breaks whenever the fields change
+- The builder reads clearly and survives those changes
 
 ## class-19-state-pattern
-State Pattern via a `MediaPlayer`: starts from bad code (`bad-code/` uses a raw `State` enum with if-else branching), then fixes it with `IState` interface (`play`/`pause`/`stop`) implemented by `PlayState`/`PauseState`/`StopState` — `MediaPlayer` delegates to its current state object instead of branching on an enum, and swaps state via `setState()`.
+- State pattern using a media player
+- Starts from bad code: one enum with if-else checks scattered around
+- Fixed by giving each state (play, pause, stop) its own class that owns its own rules
 
 ## class-20-Singleton
-Singleton Pattern: private constructor plus a static `getInstance()` that lazily creates the one shared instance on first call and returns it on every call after — ensures only one object of the class ever exists.
+- Making sure only one object of a class can ever exist
+- Private constructor plus one shared access point
 
 ## class-21-Observer-pattern
-Observer Pattern via a YouTube notification example: `ISubject` (`subscribe`/`unsubscribe`) implemented by `YouTubeChannel`, `ISubscriber` implemented by `EmailSubscriber`/`SMSSubscriber` — `uploadVideo()` triggers `notifySubscribers()`, looping through all subscribers and calling their `notifyUser()`, so any number of observer types can react to one event without the channel knowing their details.
+- One event, many listeners
+- Example: a YouTube channel uploads a video and every subscriber gets notified
+- The channel does not know who is listening or how many there are
 
 ## class-22-factory-method
-Factory Method and Abstract Factory, side by side. `Factory-for-Game`: abstract `Level.createEnemy()` is the factory method — `ForestLevel`/`SnowLevel`/`DesertLevel` each decide their own `IEnemy` (`Goblin`/`SnowMan`/`SandMan`) while `Level`'s shared logic never changes. `abstract-factory-furniture-example`: `FurnitureFactory` (`createChair`/`createSofa`) implemented by `ModernFurnitureFactory`/`VictorianFurnitureFactory`, guaranteeing `FurnitureStore` always gets a matching family of pieces, never a mismatched Modern chair with a Victorian sofa.
+- Two creation patterns side by side
+- Factory Method: each game level decides which enemy it creates, while the shared level logic stays the same
+- Abstract Factory: a furniture factory that guarantees a matching set, so you never get a modern chair with a victorian sofa
 
 ## class-23-Adapter-pattern
-Adapter Pattern (theory) — wrapping an incompatible class (e.g. a third-party/legacy API) behind your existing interface so the rest of the codebase can keep calling the familiar contract without knowing a translation is happening underneath.
+- Adapter (theory)
+- Wrapping something with the wrong shape — an old or third-party class — so existing code can keep calling what it already knows
 
 ## class-24-Decorator
-Decorator Pattern on `IPayment`: abstract `BaseDecorator` holds the wrapped `IPayment` so concrete decorators don't repeat that boilerplate — `FeeDecorator`/`RewardDecorator` layer fee (`CardFee`/`UPIFee`) and reward (`CardReward`/`UPIReward`) behavior onto `CardPayment`/`UPIPayment` by stacking wrappers, instead of writing a combinatorial-explosion of Fee+Reward subclasses per payment type.
+- Adding behaviour by wrapping an object instead of subclassing it
+- Fees and rewards get stacked onto payments in layers
+- Avoids needing a separate class for every combination
 
 ## class-25-hw-diisc-composition-composite-facade-proxy-pattern
-Four patterns in one class, plus ready-made quiz CSVs (`Quiz-CSVs/`) for composite, composition-vs-inheritance, facade, and proxy. **Composite**: `FileSystemItem` interface (`getSize()`) implemented uniformly by `File` (leaf) and `Folder` (holds children, sums their sizes) — same for `Employee`/`Manager`/`IndividualContributor`, treating individuals and groups through one interface. **Facade**: `CheckoutFacade.checkout()` hides `PaymentValidator` → `FraudCheckService` → `PaymentGateway` → `NotificationService` behind one simple call. **Proxy**: `DocumentProxy` defers creating the expensive `RealDocument` until `display()` is actually called (lazy loading), compared against `bad-code/` which loads it eagerly on construction.
+- Four topics in one class, plus quizzes
+- **Composite**: files and folders treated the same way, so a folder can add up its contents without the caller caring which it has
+- **Facade**: one simple call hiding four services behind it
+- **Proxy**: only build the expensive object when it is actually needed
+- Also composition vs inheritance — when to hold something instead of extending it
 
 ## class-26-parking-lot-LLD-1
-Full LLD problem statement: design a multi-floor Parking Lot system (spot allocation by size/vehicle-type compatibility, entry/exit + ticketing, swappable fee schemes, spot state — Available/Occupied/Reserved, cross-floor availability reporting, centralized object creation, single shared lot instance, one simple external entry/exit call, and a stretch goal for lazy/access-controlled ticket lookups). Written to deliberately map onto nearly every pattern covered so far — Strategy (pricing), State (spot condition), Composite (floor/lot reporting), Factory (spot/vehicle creation), Singleton (one lot instance), Facade (simple external interface), Proxy (stretch goal).
+- First full design project: a multi-floor parking lot
+- Written requirements: spot sizes, tickets, fee schemes, availability, one shared lot
+- Deliberately written so it needs almost every pattern covered so far
 
 ## class-27-parking-lot-2
-Design notes/walkthrough continuing the Parking Lot LLD problem from class-26.
+- Continues the parking lot design discussion from class-26
 
 ## class-28-parking-lot-LLD-code
-First code pass on the class-26/27 Parking Lot design, everything in one flat `src/` package (no sub-packages yet). Implements the State pattern for spot occupancy (`IState`, singleton `AvailableState`/`OccupiedState`), Strategy for pricing (`IPricingStrategy`, `HourlyBikePricingStrategy`/`HourlyCarPricingStrategy`) selected via a `PricingStrategyFactory` keyed by `SpotSize`, plus `IVehicle` (`TwoWheeler`/`FourWheeler`/`HeavyFourWheeler`) and `ISpot` (`CompactSpot`/`LargeSpot`/`HeavySpot`) hierarchies. Several pieces are deliberately left as stubs (`ParkingFacade`, `Main`, `Ticket`, `HeavySpot` are empty) — a work-in-progress snapshot mid-implementation.
+- First code pass on the parking lot
+- Everything in one flat folder, some pieces still empty — a work-in-progress snapshot
 
 ## class-29-Parking-Lot-complete
-Reorganizes class-28 into real packages (`model.parking`, `model.spot`, `model.vehicle`, `model.ticket`, `pricing`, `state`, `factory`, `facade`, `service`, `exception`) and finishes the system end to end. Adds `ParkingLot` (Singleton via `getInstance()`) composed of `Floor`s, both implementing a shared `IArea.availableSpots()` (Composite), a `SpotFactory` centralizing spot creation, a `SpotFinder` service that scans floors for a size-matching available spot, `TicketManager` for ticket history, and `NoAvailableSpotException` when no spot fits. `ParkingFacade.parkVehicle()/unPark()` hides spot-finding, state assignment, ticketing, and pricing behind one call; `Main.java` demonstrates parking/unparking a car and bike and triggering the no-spot exception for a second heavy vehicle.
+- The parking lot finished and working end to end
+- Code reorganised into proper packages
+- Parks and unparks a car and a bike, and correctly refuses when no spot fits
 
 ## class-30-package-pLot-start-VM
-No code — two notes files. `Parking-lot-future-notes.txt` is a retrospective code review of the class-29 parking lot, cataloguing concrete bugs: `SpotFactory` is a cached registry, not a real factory (duplicate spots are secretly the same object); `PricingStrategyFactory` keyed by `SpotSize` conflates spot tier with vehicle type; the `ParkingLot` singleton's lazy init isn't synchronized and `isAvailable()`+`assign()` race across threads; state methods fail silently instead of throwing, letting `unPark()` double-charge; `TicketManager` leaks its internal list; `SpotFinder` is tightly coupled to the singleton. `Problem-statement.txt` introduces the next project — a Vending Machine managing slots/inventory, payment, dispensing, and change, driven by machine state (idle/awaiting-payment/dispensing/unavailable).
+- No code — two notes files
+- A review of our own parking lot code, listing the real bugs in it: spots secretly sharing one object, failures that print a message instead of raising an error, internal lists handed out to callers
+- Also introduces the next project: a vending machine
 
 ## class-31-VM-design-LLD
-Expands the vending machine problem statement into nine numbered functional-requirement sections (inventory/slots, selection, payment, change/cash handling, dispensing, machine lifecycle, reporting, external interaction, and stretch-goal extensibility), plus a design-plan PDF, and lays down the initial package skeleton (`app`, `common`, `facade`, `machine`, `machine.state`, `payment`, `service`, `transaction`) mostly as stubs. `VendingMachine` (Singleton) holds a `ChangeService`; `IMachineState`/`IdleState`/`AwaitingPaymentState`/`DispensingState`/`UnavailableState` (State pattern) and `IPaymentStrategy`/`CashPayment`/`CardPayment`/`UPIPayment` (Strategy) exist but with empty method bodies, and `Slot`/`VendingMachineFacade` are placeholder classes — scaffolding for classes 32–34.
+- Vending machine requirements written out in nine sections
+- Package structure created with mostly empty classes — the skeleton for the next few classes
 
 ## class-32-VM-code-1
-Fills in the class-31 skeleton into a working vending machine. `VendingMachine` (Singleton) now holds real `Slot`s (id/product/price/quantity, `dispenseOne()`/`restock()`) and delegates `selectSlot()/insertPayment()/cancel()` to whichever `IMachineState` is active, with each state throwing a new `InvalidMachineStateException` on illegal calls instead of ignoring them; new `SlotUnavailableException`/`ChangeUnavailableException` cover empty slots and unmakeable change. Payment combines Strategy and Factory: `IPaymentStrategy` (`CashPayment`/`CardPayment`/`UPIPayment`) is chosen by a new `PaymentStrategyFactory`. `VendingMachineFacade.selectProduct()/insertPayment()/cancel()` is the single external entry point, coordinating slot lookup, state transitions, change validation (`ChangeService`), and `TransactionManager`; a new `ITransactionLookup` interface sits in front of `TransactionManager` as the seam for the class-31 stretch goal (a future Proxy for lazy/access-controlled transaction history).
+- Fills in the skeleton into a working vending machine
+- Slots hold stock; the machine moves through idle, awaiting payment, dispensing and unavailable
+- Illegal actions now raise an error instead of being quietly ignored
+- Cash, card and UPI each validate themselves
+- One entry point coordinates the whole purchase
 
 ## class-33-VM-code-&-debug
-A debugging and cleanup pass over the class-32 vending machine — same package structure and classes, no new functionality. Reorders members, adds explanatory comments (why cash-only payments update the machine's change reservoir, how `PendingPurchase` stages incremental payments, that `IMachineState` implementations must throw `InvalidMachineStateException` rather than silently no-op), and lands a complete `Main.java` walkthrough: buying with exact cash, paying in two partial installments, a card payment rejected by `InvalidPaymentException` for falling below `CardPayment`'s minimum, a cancel, a successful card purchase, and a final `SlotUnavailableException` once a slot sells out.
+- Debugging and clean-up pass, no new features
+- Comments added explaining why things are the way they are
+- A full walkthrough: exact cash, payment in two parts, a rejected card payment, a cancel, and finally a sold-out slot
 
 ## class-34-VM-new-req
-Three new requirements layered onto the finished vending machine. **New payment type via inheritance**: `PaymentMethod.SPECIAL` plus `SpecialCardPayment extends CardPayment`, which reuses the card minimum through `super.process()` and then subtracts its own flat surcharge — the first real class-inheritance relationship among the payment strategies, which until now were siblings behind one interface. **Decorator**: a `payment/decorator/` package (`PaymentDecorator`, `CashBackDecorator`) for layering an effect onto a payment without reopening it (note the factory still returns a bare `SpecialCardPayment`, so the decorator is defined but not yet wired in). **Change-reserve restricted to cash**: `IPaymentStrategy` grows a `default boolean doesAffectChangeReserve()` returning `false`, overridden by `CashPayment`, so `VendingMachineFacade.completePurchase()` gates `releaseChange`/`receiveCash` behind one polymorphic question instead of branching per payment type — the default method is what let the interface grow without touching the payment classes that already worked.
+- Three new requirements added to the finished machine
+- A new "special card" payment type, built by extending the existing card payment so it reuses its rules
+- A decorator, so extra behaviour can be layered onto a payment without editing it
+- The cash reserve now only updates for cash payments, decided by the payment type itself instead of if-else in the checkout code
 
 ## class-35-snake-game-Design
-Snake game LLD design session. `requirements.txt` is the written problem statement — nine numbered sections (board, movement, growth, food, boundary behaviour, game lifecycle, scoring and reporting, external interaction, stretch goals) phrased as demands on the system, with a separate `HINT` line per section so the design decision each one is really testing gets discovered rather than handed over; no pattern is named anywhere in the file. `UML/` holds five schematic sheets, one per pattern (states, observer, factory, spawn strategy, template method), alongside a design-notes PDF.
+- Third project: snake game, design only
+- `requirements.txt` written as demands on the system, with a hint per section so the design gets discovered rather than handed over
+- No pattern is named anywhere in the requirements
+- `UML/` has five diagrams, one per pattern used
 
 ## class-36-snake-game-code-discuss
-The working implementation of the class-35 design — plain Java, no GUI, driven from `Main`. Packages: `engine` (abstract `SnakeGame` plus `ClassicSnakeGame`/`WrapAroundSnakeGame`), `engine.state` (`IGameState` implemented by `RunningState`/`PausedState`/`GameOverState`, illegal calls throwing `InvalidMoveException`), `food` (parallel `FoodItem` and `FoodCreator` hierarchies plus `IFoodSpawnStrategy`), `observer`, `score`, `board`, `common`. `SnakeGame.performMove()` is the template method: a fixed five-step pipeline (compute next head → `handleBoundary()` → self-collision check → eat-or-advance → notify observers) in which only `handleBoundary()` varies — Classic returns `null` off the board to end the game, WrapAround wraps the coordinate with `Math.floorMod`. Growth is implemented as an omission rather than an action: the eating branch simply skips the tail eviction that every other move performs. The snake is held twice over, as an ordered `Deque<Point>` and a `Set<Point>`, so self-collision stays cheap as it grows. `Main` plays the game with a small greedy bot instead of keyboard input, keeping runs deterministic under a seeded `Random`.
+- The working snake game, plain Java with no graphics
+- One fixed sequence per move; only the edge-of-board rule changes between game types
+- Classic ends the game at the wall, wrap-around comes out the other side
+- Growing is just skipping the step that normally drops the tail
+- A small bot plays it, so runs are repeatable
 
 ## class-37-code-debug-discuss
-A debugging session on the class-36 code, followed by a new-requirements pass; `new-req.txt` records the three stretch requirements taken from class-35's section 9 and what each actually cost. Met purely by addition, with no existing file edited: `SuperFood`/`SuperFoodCreator` (a third food kind), `CylinderSnakeGame` (a third boundary mode — Pac-Man style, side edges wrap and top/bottom are fatal), `MilestoneObserver` (a third listener), and `CyclingFoodSpawnStrategy`. The power-up requirement could **not** be met by addition — scoring was hardcoded as `score += currentFood.getPoints()`, so a seam had to be cut into `SnakeGame` first: `IScoringRule`/`BaseScoringRule`/`ScoringRuleDecorator`/`DoublePointsDecorator`, with a per-move `onMove()` tick so a timed effect can expire. The notes also record what the design cannot express: a bouncing edge is impossible, because `handleBoundary()` receives only a candidate position and `SnakeGame` stores no direction to reverse.
+- Debugging session, then a new-requirements pass
+- Three requirements were met by only adding new files: a new food type, a new edge rule, a new listener
+- The power-up requirement could not be — scoring was hardcoded, so existing code had to be opened up first
+- Notes also record what the design cannot do: a bouncing edge is impossible without changing the shared move logic
 
 ## class-38-concurrency
-Start of the concurrency block — reading material only (a link on concurrency vs. parallelism), no code.
+- Start of the concurrency block
+- Reading and discussion: concurrency vs parallelism — taking turns, versus genuinely running at the same time
+- No code
 
 ## class-39-threading-start
-First threading code, plus a threading-and-processes discussion PDF. `MyThread extends Thread` overriding `run()`, and `Main` creates two instances and calls `start()` on each, printing `Thread.currentThread().getName()` from both the main thread and the spawned ones — so the output shows the two worker threads by name and shows the main thread carrying on past `start()` rather than waiting. A commented-out second `t1.start()` records that a thread cannot be restarted once it has run.
+- First threading code, plus a discussion PDF on threads and processes
+- Creating threads by extending `Thread`
+- Shows each thread's name, and that the main thread carries on instead of waiting
+- Notes that a thread cannot be started twice
 
 ## class-40-runnable-thread-method
-Moves from `extends Thread` to `Runnable`, covers the thread lifecycle and the common thread methods, and asks whether threading actually pays off. `MyTask` and `Fibonacci` both implement `Runnable` and are handed to a plain `Thread`, so the task is separated from the worker and the same task object can be reused for several threads — the composition-over-inheritance argument from class-25, in a new setting. `Main` starts four threads for fibonacci of 6, 7, 8 and 9 and never calls `join()`, which shows both that ordinary threads keep the JVM alive after `main` finishes and that their output order is not guaranteed. A commented-out block records the `getState()` readings around `start()` and `join()`. `class-plan.txt` holds the session plan, including the measured benchmark that answers the question the fibonacci demo cannot: CPU-bound work (`fib(36)`) speeds up sub-linearly and flattens at roughly the core count, while blocked work (`sleep(500)`) scales exactly linearly, because a waiting thread needs no core at all.
+- Switches to `Runnable`: the job and the worker become separate things, so the same job can be given to several threads
+- Thread states, and the common thread methods
+- Runs fibonacci on four threads — fine for showing threads, but the numbers are far too small to show any speed gain
+- `class-plan.txt` has the measured answer: computing only gets faster up to the number of cores, while waiting overlaps almost for free
 
 ## class-41-states-demo-synchronization
-Observes the thread states directly and then introduces `synchronized`. `MyTask` sleeping gives TIMED_WAITING; `Waiter` calling `join()` on another thread gives WAITING — the same "not running" idea, separated only by whether there is a deadline. `Counter.increment()` is `synchronized` and holds a 5-second sleep inside the lock, and two threads share one `Counter` through a single `CounterRunnable`, so the thread holding the lock reads TIMED_WAITING while the one waiting to get in reads BLOCKED. Because `count++` is really read, add and write, the lock is what makes the final total come out at exactly 2000 rather than some smaller number that differs every run. `notes.txt` records what was done and why, and flags that the demo as written needs about 2.8 hours to reach that final total — 2000 calls times 5 seconds, queued up one behind another by the lock.
+- Watching thread states directly: sleeping, waiting on another thread, and waiting for a lock
+- A shared counter that two threads both increment
+- `count++` is really three steps, so without a lock some updates go missing
+- `synchronized` makes the total come out right every time, at the cost of the threads taking turns
+- `notes.txt` has what we did and why, plus a warning that the demo as written takes hours to finish
 
 ## class-42-syncronized-locks
-Goes deeper on synchronization with two worked examples, both using a `synchronized` block rather than a whole synchronized method. `BankAccount.withdraw()` does the cheap `amount <= 0` check outside the lock and only locks the part that matters — the balance check, the pause, and the subtraction together — which is the point that guarding just the subtraction would leave a gap between checking the balance and acting on it. `Singleton.getInstance()` applies the same idea to lazy creation, locking on `Singleton.class` (a static method has no `this` to lock) so two threads cannot both see `instance` as null and each build their own; the `sleep(100)` inside is there purely to widen the window and make the race easy to reproduce. `Main` runs both demos: two threads withdrawing 700, then two threads calling `getInstance()` and printing what they got. Running it gives `Final balance: 300` twice and the same `Singleton@...` identity from both threads — the singleton half proving the lock worked, while the bank half gives each thread its own account (`account1`, `account2`) so those two threads never actually contend for the same balance.
+- Going further with synchronization, this time locking only part of a method instead of all of it
+- Bank account: the cheap check stays outside the lock, while the balance check and the withdrawal are locked together
+- Singleton: locking so two threads cannot both decide to create the object
+- Both examples use a deliberate pause to make the problem easy to reproduce
