@@ -1,0 +1,881 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+withdraw() is NOT marked synchronized - a `synchronized (this)` block is used inside it instead. What exactly does that block lock?","The withdraw() method, so no thread anywhere can run it",The BankAccount object it was called on. Two threads working on two DIFFERENT accounts never wait for each other,The balance field only,"The whole BankAccount class, so all accounts are locked together",,2,`synchronized (this)` locks the current object. This is the same lock a `public synchronized void withdraw()` would have taken - the block form just lets you choose how much of the method it covers.,2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+The `amount <= 0` check is deliberately left OUTSIDE the block. Why was it written that way?",Because a check cannot be placed inside a synchronized block,"Because it only looks at the argument, not at any shared data. Nothing about it can go wrong between threads, so putting it inside would make threads wait for no reason",Because negative amounts must be rejected before the account is created,Because the lock cannot be taken until the amount is known to be valid,,2,"The lock only needs to cover shared, changing data. `amount` is a parameter - each thread has its own copy - so guarding it buys nothing and costs waiting time.",2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+The balance check and the subtraction are both inside the same block. Why must they be together rather than locking just the subtraction?",They do not have to be - locking the subtraction alone would be equally safe,"Because otherwise another thread can slip in between the check and the subtraction, so both threads pass a check against the old balance and both then deduct",Because the compiler requires the if and the assignment in the same block,Because sleep() can only be called inside a lock,,2,Check-then-act only works if the whole decision is one indivisible unit. This is the single most common way a lock gets added and still fails to fix anything.,2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+// a broken variant
+public void withdraw(int amount) {
+    if (amount <= 0) {
+        return;
+    }
+    if (amount > balance) {       // check now OUTSIDE the lock
+        return;
+    }
+    synchronized (this) {
+        balance = balance - amount;
+    }
+}
+
+One shared account holds 1000 and two threads each withdraw 700 using the broken variant. What can happen?",Nothing changes - the subtraction is still protected,"Both threads can pass the balance check while the balance is still 1000, then take turns subtracting, leaving -400. The lock protected the subtraction but not the decision to subtract",The second thread throws an exception when the balance would go negative,"The balance ends at 300, the same as the correct version",,2,Verified against a no-lock version of exactly this shape: 7 out of 8 runs ended at -400. Locking only the write is a very convincing-looking non-fix.,2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+Why is there a `Thread.sleep(100)` sitting inside the synchronized block? What is it actually for?",It gives the balance time to update before the subtraction,"It is there for the demo. It stretches out the time spent inside the critical section, so the race is easy to reproduce and another thread is visibly kept waiting - it is not part of the fix","It is required, because synchronized blocks must contain a blocking call",It prevents the two threads from starting at the same instant,,2,The sleep does not cause the bug and does not fix it. Real bugs like this hit inside a few nanoseconds and hide on a fast machine; the sleep just widens the window so the behaviour can be seen and discussed.,2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+You delete the `Thread.sleep(100)` from the unsynchronized version of this code and the wrong balance stops appearing. What have you actually changed?",You have fixed the bug - no wrong balance means no problem,"Nothing about the bug. You have only made the dangerous window so small that you stop hitting it. The code is exactly as broken, it just now hides on this machine",You have made the code slower but safer,"You have removed the shared state, so no lock is needed",,2,This is why a threading bug cannot be dismissed because a few runs looked fine. Making a race harder to observe is the opposite of fixing it.,2
+"The unsynchronized version of the bank account was run 8 times, two threads each withdrawing 700 from a shared 1000. It printed -400 seven times and 300 once. What does that VARIATION tell you?",That the code is correct 1 time in 8,"That the outcome depends purely on timing, so the same code gives different wrong answers on different runs. There are two separate failures here: an overdraft (-400) and a lost withdrawal (300, where 1400 was paid out but only 700 deducted)",That the JVM is faulty,That 300 is the correct answer and -400 is a rounding error,,2,Neither result is acceptable. Both come from the same gap between the check and the subtraction; which symptom you get depends on where the threads happen to interleave.,2
+"Real code:
+
+// Main
+BankAccount account1 = new BankAccount(1000);
+BankAccount account2 = new BankAccount(1000);
+
+Thread t1 = new Thread(new WithdrawTask(account1, 700), ""T1"");
+Thread t2 = new Thread(new WithdrawTask(account2, 700), ""T2"");
+
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+
+System.out.println(""Final balance: "" + account1.getBalance());
+System.out.println(""Final balance: "" + account2.getBalance());
+
+Look carefully at what each thread is given. Does this demo actually exercise the `synchronized (this)` block?",Yes - two threads are running withdraw() at the same time,"No. T1 uses account1 and T2 uses account2, so they lock two different objects and never wait for each other. Each just withdraws 700 from its own 1000 and prints 300","Yes, because both threads use the same WithdrawTask class","No, because 700 is less than 1000",,2,"Verified output is 'Final balance: 300' twice, and it would be 300 twice even with no lock at all. To make the lock matter, BOTH threads have to be handed the SAME account.",2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+// Main, changed so both threads share ONE account
+BankAccount shared = new BankAccount(1000);
+
+Thread t1 = new Thread(new WithdrawTask(shared, 700), ""T1"");
+Thread t2 = new Thread(new WithdrawTask(shared, 700), ""T2"");
+
+t1.start();
+t2.start();
+t1.join();
+t2.join();
+
+System.out.println(shared.getBalance());
+
+Now both threads share one account of 1000 and each asks for 700, WITH the synchronized block in place. What is printed, and how many withdrawals succeed?","-400, because both withdrawals go through","300, and only ONE withdrawal succeeds. The second thread waits, then sees that 700 is more than the remaining 300 and returns without doing anything","300, and both withdrawals succeed","1000, because both are rejected",,2,"Verified: 300 on all 8 runs. The lock does not make both withdrawals work - it makes the second one correctly fail, which is the whole point.",2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+getBalance() has no lock at all. Why is that acceptable in this demo, and when would it stop being acceptable?","It is always fine, because reading a value cannot break anything","It is fine only because Main calls it after join(), when no thread is still changing the balance. Called while the threads were running it could return a value from halfway through someone's withdrawal",It is fine because getBalance() returns a copy of the balance,It is never acceptable and the demo is simply wrong,,2,"The join() calls are doing the safety work, not the getter. A reader running alongside the writers needs the lock too.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+getInstance() locks on `Singleton.class` rather than on `this`. Why was it written that way?",Because locking the class is always faster than locking an object,"Because getInstance() is static, so there is no `this` to lock - and the data it protects is a static field shared by every caller, not something belonging to one object",Because Singleton has a private constructor,Because `this` would only lock the first instance created,,2,"Writing `synchronized (this)` inside a static method does not even compile. The lock has to match what it protects: static data needs a lock that is also shared program-wide, which is what the class object gives you.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+public class SingletonTask implements Runnable {
+    @Override
+    public void run() {
+        Singleton instance = Singleton.getInstance();
+        System.out.println(instance);
+    }
+}
+
+Two threads call getInstance() at almost the same moment. With the lock in place, what does the program print?","Two different Singleton identities, one per thread","The same Singleton identity twice - verified output was Singleton@72384b69 printed by both threads, meaning only one object was ever created","One line only, because the second thread is blocked forever",Nothing - the objects cannot be printed,,2,"Identical identities are the proof. If two objects had been created the two printed values would differ, which is exactly what happens without the lock.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+Suppose the `synchronized (Singleton.class)` line is removed. What can two threads produce, and why?","The same object, because the null check still protects it","Two different Singleton objects. Both can find instance still null, both then create one, and each caller walks away with a different object - so a class that promises to have one instance now has two",A NullPointerException in the second thread,"One object, but the second thread gets null",,2,"Exactly the same check-then-act shape as the bank account, applied to deciding whether to create something. The sleep inside makes this easy to reproduce rather than a once-in-a-thousand-runs surprise.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+What is the comment 'Only to make the race condition easy to reproduce' telling you about the sleep?",That the sleep is needed for the singleton to work correctly,"That the sleep is demo scaffolding. It widens the gap between the null check and the assignment so two threads reliably land in it - real code would have no sleep and the race would just be rarer, not absent",That the sleep should be increased in production for safety,That the sleep replaces the need for a lock,,2,"Worth noting the author wrote that comment deliberately. Without it, someone reading the file later could easily assume the pause was doing something functional.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+Would `public static synchronized Singleton getInstance()` with no inner block behave the same as the current code?",No - a static synchronized method takes no lock at all,"Yes, essentially. A static synchronized method locks the class object, which is exactly what `synchronized (Singleton.class)` does here, and the block already wraps the whole method body",No - the method version would lock `this` instead,No - the method version would allow two instances to be created,,2,"Since the block covers the entire body, the two forms are equivalent. The block form is worth keeping when you later want to leave part of the method outside the lock, as the bank account does.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+`return instance;` sits INSIDE the synchronized block rather than after it. Does that matter?",Yes - returning from inside a lock leaves the lock permanently held,"No. The lock is released when the block is left, including by a return, so both placements are safe. Returning inside also guarantees you read the field while still holding the lock",Yes - the value returned would be null,"No, but only because the method is static",,2,"A lock is always released on the way out of the block, whether by falling off the end, returning, or an exception being thrown.",2
+"Real code:
+
+class Singleton {
+
+    private static Singleton instance;
+
+    private Singleton() {
+    }
+
+    public static Singleton getInstance() {
+
+        synchronized (Singleton.class) {
+            if (instance == null) {
+
+                // Only to make the race condition easy to reproduce
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                instance = new Singleton();
+            }
+
+            return instance;
+        }
+    }
+}
+
+public class ConfigLoader {
+
+    private static Map<String, String> settings;
+
+    public static Map<String, String> get() {
+        synchronized (ConfigLoader.class) {
+            if (settings == null) {
+                settings = readFromDisk();      // slow, must happen only once
+            }
+            return settings;
+        }
+    }
+}
+
+ConfigLoader has the same shape as the Singleton but a different job. What is being protected, and is the class lock the right choice?",Nothing needs protecting - a Map is already thread-safe,"The static settings field, and yes. Two threads could both find it null and both read from disk - doing the slow work twice and each getting a different Map. Static data plus a static method means the class lock is the matching one","The disk file, and no - a file lock is needed instead","The return value, and no - the lock should be on the Map object",,2,"Same shape, different domain: lazy creation of shared data. Recognising the shape is what lets you reuse the fix without rediscovering it.",2
+"Real code:
+
+public class IdGenerator {
+
+    private static int lastId = 0;          // ONE counter for the whole program
+
+    public int nextId() {
+        synchronized (this) {               // locks this IdGenerator object
+            lastId = lastId + 1;
+            return lastId;
+        }
+    }
+}
+
+lastId is static - one counter for the whole program - but the lock is `synchronized (this)`. Two threads each hold their OWN IdGenerator and call nextId(). Is this safe?",Yes - the counter is protected by the synchronized block,"No. Each thread locks its own IdGenerator object, so neither ever waits for the other, and both can read and write the shared lastId at the same time - producing duplicate IDs","Yes, because static fields are automatically thread-safe","No, but only if there are more than two threads",,2,The most important mismatch to be able to spot: the lock is per-object while the data is per-class. A lock only helps if every thread touching the data takes the SAME lock.,2
+"Real code:
+
+public class IdGenerator {
+
+    private static int lastId = 0;          // ONE counter for the whole program
+
+    public int nextId() {
+        synchronized (this) {               // locks this IdGenerator object
+            lastId = lastId + 1;
+            return lastId;
+        }
+    }
+}
+
+public class IdGenerator {
+
+    private static int lastId = 0;
+
+    public int nextId() {
+        synchronized (IdGenerator.class) {  // locks the class
+            lastId = lastId + 1;
+            return lastId;
+        }
+    }
+}
+
+The second version changes one thing: the lock is now on IdGenerator.class. Why does that fix it?",Because class locks are faster,"Because there is exactly one class object no matter how many IdGenerator instances exist, so every thread now competes for the same lock - which matches the fact that they all share the same static counter",Because it also makes lastId final,Because static methods can only use class locks,,2,"The rule that carries over: instance data goes with `this`, static data goes with `.class`. Match the lock to the scope of what it guards.",2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+// Main
+BankAccount a = new BankAccount(1000);
+BankAccount b = new BankAccount(1000);
+
+Thread t1 = new Thread(new WithdrawTask(a, 700), ""T1"");
+Thread t2 = new Thread(new WithdrawTask(b, 700), ""T2"");
+
+T1 is inside its synchronized block on account a, holding the lock for 100 ms. Does T2 have to wait to enter its block on account b?",Yes - only one thread at a time may be inside a synchronized block,"No. The lock belongs to the object, and a and b are different objects, so the two threads proceed at the same time without ever meeting","Yes, because both are BankAccount objects",Only if a and b hold the same balance,,2,This is precisely why the class-42 demo shows no contention. It is also the answer to 'does adding synchronized slow everything down' - it only slows down threads competing for the SAME object.,2
+"Real code:
+
+public class Meter {
+
+    private static int totalReadings = 0;      // shared by every Meter
+    private int myReadings = 0;                // this Meter only
+
+    public void record() {
+        synchronized (this) {
+            myReadings = myReadings + 1;
+        }
+        synchronized (Meter.class) {
+            totalReadings = totalReadings + 1;
+        }
+    }
+}
+
+record() takes two different locks in turn. Why does this class need both?",It does not - one of the two blocks is redundant,"Because it changes two different kinds of data: myReadings belongs to this one Meter so `this` is the right lock, while totalReadings is shared by every Meter so the class lock is the right one",Because taking two locks is always safer than one,Because static fields must be locked twice,,2,"A good illustration that the choice is not a style preference. Each piece of data has a scope, and the lock has to have the same scope.",2
+"Real code:
+
+public class Meter {
+
+    private static int totalReadings = 0;      // shared by every Meter
+    private int myReadings = 0;                // this Meter only
+
+    public void record() {
+        synchronized (this) {
+            myReadings = myReadings + 1;
+        }
+        synchronized (Meter.class) {
+            totalReadings = totalReadings + 1;
+        }
+    }
+}
+
+Thread A is inside the `synchronized (this)` block of one Meter. Thread B tries to enter the `synchronized (Meter.class)` block. Does B wait?","Yes - both blocks are in the same method, so they share a lock","No. An object lock and a class lock are two separate locks, so holding one does nothing to stop another thread taking the other","Yes, because Meter.class includes every Meter object",Only if A and B are working on the same Meter,,2,Worth being clear about: `this` and `.class` do not overlap at all. Guarding the same field with `this` in one method and `.class` in another gives you no protection whatsoever.,2
+"Real code:
+
+public class Cart {
+
+    private int itemCount = 0;
+    private double total = 0.0;
+
+    public void addItem(double price) {
+        synchronized (this) {
+            itemCount = itemCount + 1;
+            total = total + price;
+        }
+    }
+
+    public void clear() {
+        synchronized (this) {
+            itemCount = 0;
+            total = 0.0;
+        }
+    }
+}
+
+Thread A is inside addItem() on a Cart. Thread B calls clear() on the SAME Cart. Does B wait?","No - they are different methods, so they use different locks","Yes. Both blocks lock `this`, and it is the same object, so B waits until A leaves its block","No, because clear() only resets values","Yes, but only because both methods change two fields",,2,"There is one lock per object, not one per method. That is correct here - both methods change itemCount and total together, so they genuinely must not overlap.",2
+"Real code:
+
+public class SeatBooking {
+
+    private final boolean[] booked = new boolean[50];
+
+    public boolean book(int seat, String customer) {
+        synchronized (this) {
+            if (booked[seat]) {
+                return false;
+            }
+            booked[seat] = true;
+            return true;
+        }
+    }
+}
+
+public class BookingTask implements Runnable {
+    private final SeatBooking booking;
+    private final String customer;
+
+    public BookingTask(SeatBooking booking, String customer) {
+        this.booking = booking;
+        this.customer = customer;
+    }
+
+    @Override
+    public void run() {
+        boolean got = booking.book(12, customer);
+        System.out.println(customer + "" got seat: "" + got);
+    }
+}
+
+Two threads try to book seat 12 at the same time on one SeatBooking object. With this lock in place, what gets printed?","Both print got seat: true, because each ran book() successfully","One prints true and the other prints false. The check and the assignment are inside one lock, so the second thread only gets to look after the first has finished claiming the seat",Both print false,One prints true and the other throws an exception,,2,"Notice this is also better API design than the bank account's version: book() returns a boolean, so the caller can actually tell whether it worked instead of having to inspect state afterwards.",2
+"Real code:
+
+public class Inventory {
+
+    private int stock = 5;
+
+    public boolean sell() {
+        if (stock <= 0) {              // check is OUTSIDE the lock
+            return false;
+        }
+        synchronized (this) {
+            stock = stock - 1;         // only the change is locked
+            return true;
+        }
+    }
+}
+
+There are 5 items in stock and 8 threads all call sell() at once. Look carefully at where the lock starts. What can go wrong?","Nothing - the decrement is protected, so stock cannot go below zero","Stock can go negative. All 8 threads can pass the `stock <= 0` check while stock is still 5, and then each takes its turn decrementing - so more items are sold than exist",Some threads get an ArrayIndexOutOfBoundsException,"Exactly 5 succeed, because the lock counts the sales",,2,"The identical mistake as the broken bank variant, in a different domain. The lock has to start BEFORE the check that the change depends on.",2
+"Real code:
+
+public class Account {
+
+    private int balance;
+
+    public Account(int balance) {
+        this.balance = balance;
+    }
+
+    public void transferTo(Account other, int amount) {
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+            balance = balance - amount;
+            other.deposit(amount);      // touches the OTHER account
+        }
+    }
+
+    public void deposit(int amount) {
+        synchronized (this) {
+            balance = balance + amount;
+        }
+    }
+}
+
+transferTo() locks `this` - the sending account - and then calls other.deposit(amount). Is the receiving account's balance protected while all this happens?","Yes - the synchronized block covers everything inside it, including the deposit","Only during deposit() itself, which takes the receiver's own lock. The sender's lock says nothing about the receiver, so another thread can be changing the receiver's balance in between","Yes, because both accounts are Account objects and share a class lock","No, and the fix is to remove the lock from deposit()",,2,A lock only ever protects what other threads also lock. `synchronized (this)` in the sender covers the sender's balance; the receiver is a different object with a different lock.,2
+"Real code:
+
+public class TaxRates {
+
+    private final Map<String, Double> rates = new HashMap<>();
+
+    public TaxRates() {
+        rates.put(""food"", 0.05);
+        rates.put(""luxury"", 0.28);
+    }
+
+    // nothing ever calls put() after the constructor
+    public double rateFor(String category) {
+        return rates.get(category);
+    }
+}
+
+Several threads call rateFor() at the same time, and nothing ever calls put() after the constructor. Does this need a synchronized block?",Yes - every shared object needs a lock,"No. The map never changes after it is built, and threads only reading unchanging data cannot interfere. A lock here would only add waiting for no benefit","Yes, because HashMap is not thread-safe",Only the constructor needs to be synchronized,,2,An important counter-example. Shared data is not automatically a critical section - the danger comes from shared data that CHANGES. Two ingredients are needed: sharing AND modification.,2
+"Across the bank account, the singleton, the seat booking and the inventory, what single question decides where the synchronized block must START?",Where the first field is written,"Where the first read happens that a later write depends on. If a decision is made from shared data, the lock has to cover the decision as well as the action","At the very beginning of the method, always",Immediately after the arguments have been validated,,2,"All four are the same shape - look at something shared, then act on what you saw. The lock must span both halves, which is why locking only the write is such a common and convincing-looking mistake.",2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+Does adding this synchronized block make the program faster or slower?","Faster, because threads stop interfering with each other",Slower when threads compete for the same object - they take turns instead of running together. You accept that because the alternative is a wrong balance,No difference either way,"Faster on several cores, slower on one",,2,"synchronized is a correctness tool with a cost, not an optimisation. That is why the cheap `amount <= 0` check was deliberately left outside it.",2
+"Real code:
+
+public class BankAccount {
+    private int balance;
+
+    public BankAccount(int balance) {
+        this.balance = balance;
+    }
+
+    public void withdraw(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+
+        synchronized (this) {
+            if (amount > balance) {
+                return;
+            }
+
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            balance = balance - amount;
+        }
+    }
+
+    public int getBalance() {
+        return balance;
+    }
+}
+
+The code sleeps for 100 ms while holding the lock. Why is that fine here but a bad habit in real code?",It is fine in both cases - locks are meant to be held during slow work,"Here it is deliberate, so the race and the waiting are visible. In real code you never do anything slow while holding a lock - every other thread is stuck waiting while nothing useful happens",It is wrong in both cases - the demo should not sleep at all,It is fine in real code as long as the pause is under a second,,2,"Say this out loud whenever the demo is shown, or the pattern gets copied into something that matters. Slow work - sleeping, network calls, disk reads - belongs outside the locked region.",2
