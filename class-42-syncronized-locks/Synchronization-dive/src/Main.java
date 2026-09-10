@@ -1,5 +1,5 @@
 void main() throws InterruptedException {
-    /*BankAccount account1 = new BankAccount(1000);
+    BankAccount account1 = new BankAccount(1000);
     BankAccount account2 = new BankAccount(1000);
 
 
@@ -14,7 +14,7 @@ void main() throws InterruptedException {
     t2.join();
 
     System.out.println("Final balance: " + account1.getBalance());
-    System.out.println("Final balance: " + account2.getBalance());*/
+    System.out.println("Final balance: " + account2.getBalance());
 
 
     // singleton example :
