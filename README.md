@@ -222,3 +222,10 @@ Roughly five blocks:
 - Bank account: the cheap check stays outside the lock, while the balance check and the withdrawal are locked together
 - Singleton: locking so two threads cannot both decide to create the object
 - Both examples use a deliberate pause to make the problem easy to reproduce
+
+## class-43-custom-locks
+- Moving from `synchronized` to explicit locks you take and release yourself
+- The reason why: with `synchronized`, if a thread gets stuck inside, everyone else waits forever and there is no way out
+- `tryLock` with a timeout: wait up to 3 seconds for the lock, and if it does not come, give up and carry on instead of blocking
+- Unlocking always goes in a `finally`, so the lock is released even if something fails
+- Second demo shows a lock is re-entrant: a thread already holding it can take it again in a nested method, while a different thread asking at that moment is turned away immediately
