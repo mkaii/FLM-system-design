@@ -1,0 +1,3 @@
+t1 and t2 oth enter synchronized section or try
+t1 inside and for some reason it is stuck.
+we are in an inrecoverable state
