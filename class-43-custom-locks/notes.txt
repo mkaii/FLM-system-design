@@ -1,3 +1,25 @@
 t1 and t2 oth enter synchronized section or try
 t1 inside and for some reason it is stuck.
 we are in an inrecoverable state
+
+although the above was exactly what we wanted to avoid race condition.
+but if race fix might cause starvation
+
+we use explicitel locks 
+
+dont use synchronized 
+-   each object has a lock be default : synchronized uses this implicit lock by default
+-   washroom example to exaplin try lock and unlock
+
+lock inside lock
+thik count and reverese count sum to be 0
+
+I didnt get the point of reentrant(fair=true)
+
+children toffee example to show fairness
+
+problems with synchronized
+- fairness
+- blocking indefintae (starvation)
+- interuptability
+- read write locking
