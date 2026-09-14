@@ -1,0 +1,12 @@
+talk about thread communication example
+- wait
+- notify
+-notifyall
+
+Start with executor service, 
+- talk about thread pool and why we needed it.
+- already keep the code in hand so that it can be finished sooner.
+- maybe take a LLD example to demonstrate this.
+
+- Think about the leetcode questions
+- go through them on you own and find one which are worth discussing
