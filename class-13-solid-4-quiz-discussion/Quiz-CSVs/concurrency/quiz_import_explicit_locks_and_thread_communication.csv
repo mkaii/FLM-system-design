@@ -1,0 +1,1014 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"The class notes give the reason for moving past `synchronized`:
+
+    t1 and t2 both enter synchronized section or try
+    t1 inside and for some reason it is stuck.
+    we are in an unrecoverable state
+
+What is the actual problem being described?",synchronized is slower than an explicit lock,"A thread waiting on synchronized has no way out - it cannot set a time limit, cannot check whether it got in, and cannot change its mind. If the thread holding the lock never leaves, everyone else waits forever",synchronized cannot be used with more than two threads,synchronized does not actually protect shared data,,2,"Nothing is wrong with what synchronized protects. The gap is control: you get no say over how long you are prepared to wait, and no way to find out that you failed.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+Compared with a `synchronized` block, what does this explicit lock let the code do that synchronized cannot?",Protect more than one variable at a time,"Put a time limit on waiting, find out whether it actually got the lock, and do something else if it did not - the `else` branch here is a path that synchronized has no way to express",Lock on the class instead of the object,Run without any risk of a race condition,,2,"The whole value is in the return value of tryLock. `synchronized` either gets in or waits forever, with no third option and no way to report which happened.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+What responsibility does the code now carry that `synchronized` used to handle on its own?",Deciding which object to lock,"Releasing the lock. With synchronized the lock is dropped automatically on the way out; here every path out of the locked region must call unlock(), which is why it is in a finally",Creating the thread,Checking whether the data is shared,,2,"You traded convenience for control. Forgetting to unlock leaves the lock held forever, which is a failure mode synchronized simply cannot produce.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+What does `lock.tryLock(3000, TimeUnit.MILLISECONDS)` actually do?",Holds the lock for 3000 ms and then releases it automatically,"Waits up to 3000 ms to get the lock, then returns true if it got in or false if the time ran out",Pauses the thread for 3000 ms before trying,Retries every 3000 ms until it eventually succeeds,,2,"The timeout is on WAITING for the lock, not on holding it. Once acquired the thread keeps the lock until it calls unlock, however long that takes.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+A thread reaches the `else` branch, prints its message, and increment() returns. What happened to that increment?",It is queued and applied as soon as the lock is free,"It never happens. The thread gave up and moved on, so this call simply did not do its work - count was not increased",It is retried automatically by the loop in CounterRunnable,It throws an InterruptedException to the caller,,2,"This is the trade-off being demonstrated. Never blocking forever also means the work can silently be skipped, so the caller has to be fine with that.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+The lock is held for 3000 ms (the sleep) and the timeout to acquire it is also 3000 ms. Why does that combination guarantee the else branch is reached?",Because the timeout and the sleep cancel each other out,"Because a waiting thread gives up after 3000 ms, which is exactly as long as the holder keeps the lock - so the waiter runs out of time at roughly the moment the lock is freed and usually loses the race for it",Because tryLock always fails on the second call,Because sleep() releases the lock partway through,,2,"The numbers were chosen deliberately so the failure path is reliably visible. Make the timeout 10000 instead and the waiter would almost always succeed, and the else branch would never be seen.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class CounterRunnable implements Runnable {
+
+    private final Counter counter;
+
+    public CounterRunnable(Counter counter) {
+        this.counter = counter;
+    }
+
+    @Override
+    public void run() {
+        for (int i = 0; i < 5; i++) {
+            try {
+                counter.increment();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        System.out.println(Thread.currentThread().getName());
+    }
+}
+
+Actual output when this is run:
+
+    t2 dont care about the lock .....will return later
+    t2 dont care about the lock .....will return later
+    t2 dont care about the lock .....will return later
+    t2 dont care about the lock .....will return later
+    t1
+    Final count: 5
+    t2
+
+t2 printed its give-up message 4 times out of 5 loop iterations. What does that tell you about what t2 achieved?",t2 failed completely and incremented nothing,"t2 only got the lock once out of five attempts - four of its five increments were skipped, so it contributed 1 to the count instead of 5",t2 incremented 4 times and failed once,t2 was never started properly,,2,"Reading the output as a count of failures is the point: 4 messages means 4 abandoned increments, so the two threads together did 6 increments rather than the 10 the loops asked for.",2
+"Real code:
+
+public class Main {
+    public static void main(String[] args) throws InterruptedException {
+        Counter counter = new Counter();
+
+        Thread t1 = new Thread(new CounterRunnable(counter), ""t1"");
+        Thread t2 = new Thread(new CounterRunnable(counter), ""t2"");
+
+        t1.start();
+        t2.start();
+
+        t1.join();
+        //t2.join();
+
+        System.out.println(""Final count: "" + counter.getCount());
+    }
+}
+
+Actual output when this is run:
+
+    t2 dont care about the lock .....will return later
+    t2 dont care about the lock .....will return later
+    t2 dont care about the lock .....will return later
+    t2 dont care about the lock .....will return later
+    t1
+    Final count: 5
+    t2
+
+The program prints 'Final count: 5', and the line `//t2.join();` is commented out. Running the same code with that join restored prints 6. Why the difference?",Restoring the join causes an extra increment to run,"Without it, main does not wait for t2, so the count is printed while t2 is still working - 5 is simply the value at that instant, not the final value",The join changes the lock timeout,6 is wrong - the correct answer is 5,,2,"Verified both ways: 5 without the join, 6 with it. The printed label says 'Final count' but nothing has made it final, which is exactly what join() is for.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class CounterRunnable implements Runnable {
+
+    private final Counter counter;
+
+    public CounterRunnable(Counter counter) {
+        this.counter = counter;
+    }
+
+    @Override
+    public void run() {
+        for (int i = 0; i < 5; i++) {
+            try {
+                counter.increment();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        System.out.println(Thread.currentThread().getName());
+    }
+}
+
+Two threads each loop 5 times, so 10 increments were requested. Is a final count below 10 a bug here?",Yes - every increment must eventually happen or the lock is broken,"No. Skipping work when the lock is busy is exactly what tryLock with a timeout was chosen for. It would be a bug in a counter that must be exact, and is fine for work that can be dropped",Yes - the timeout should be removed,"No, because count++ is atomic anyway",,2,Whether this design is right depends entirely on the job. Dropping a metrics sample is fine; dropping a customer's payment is not.,2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+Why is `lock.unlock()` inside a `finally` block rather than written as the last line of the `try`?",Purely style - both run at the same time,"Because finally runs even if the code inside throws or returns early. As the last line of try, an exception would skip it and the lock would stay held forever",Because unlock() can only be called from a finally block,Because finally runs before the try body,,2,"A lock held forever is worse than the bug that caused it: every other thread then blocks or times out, and the program looks hung rather than broken.",2
+"Real code:
+
+public class Resource {
+
+    private final Lock lock = new ReentrantLock();
+
+    public void outer() throws InterruptedException {
+        lock.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + "" acquired lock in outer"");
+            Thread.sleep(10000);
+            inner();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void inner() {
+        if (lock.tryLock()) {
+            try {
+                System.out.println(Thread.currentThread().getName() + "" acquired lock in inner"");
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println(Thread.currentThread().getName() + "" ignored the lock"");
+        }
+    }
+}
+
+In outer(), `lock.lock()` is written OUTSIDE and immediately before the `try`. Why not put it inside the try?",It makes no difference where it goes,"If lock() itself failed and it were inside the try, the finally would still run unlock() - releasing a lock this thread never acquired. Taking the lock first, then entering try, keeps unlock paired with a successful lock",Because lock() cannot be called inside a try block,Because the try block must contain only the shared data access,,2,"The standard shape is: acquire, then try, then unlock in finally. It guarantees unlock runs exactly when a matching lock succeeded.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+Notice the empty `catch (Exception e) { }` inside increment(). What is the risk?","None - the finally still unlocks, so the code is safe","The lock is released correctly, but any failure inside the critical section vanishes without a trace. The caller sees a normal return and cannot tell that the increment did not happen",It causes the lock to be released twice,It converts the exception into an InterruptedException,,2,"Same silent-failure shape as the parking lot's release() printing instead of throwing, and the vending machine cancel() that announced a refund it never made. The lock handling is fine; the error handling is not.",2
+"With `synchronized`, how does the lock get released?",The same way - you must call unlock() yourself,"Automatically when the block is left, by any route including a return or an exception - which is why synchronized cannot leak a held lock the way a missing unlock() can",Only when the thread finishes running,When another thread calls notify(),,2,"This is the strength you give up when moving to explicit locks: less control, but one entire class of bug that cannot happen.",2
+"Real code:
+
+public class Resource {
+
+    private final Lock lock = new ReentrantLock();
+
+    public void outer() throws InterruptedException {
+        lock.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + "" acquired lock in outer"");
+            Thread.sleep(10000);
+            inner();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void inner() {
+        if (lock.tryLock()) {
+            try {
+                System.out.println(Thread.currentThread().getName() + "" acquired lock in inner"");
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println(Thread.currentThread().getName() + "" ignored the lock"");
+        }
+    }
+}
+
+Thread t3 calls outer(), which takes the lock and then calls inner(), where `tryLock()` is attempted on the SAME lock. What happens?","tryLock returns false, because the lock is already held","tryLock returns true. The lock is re-entrant, so a thread that already holds it is allowed to take it again - t3 prints 'acquired lock in inner'",The thread deadlocks against itself and hangs,An IllegalMonitorStateException is thrown,,2,Verified in the output: 't3 acquired lock in inner'. Re-entrancy is what makes it safe for one locked method to call another locked method on the same object.,2
+"Real code:
+
+public class Resource {
+
+    private final Lock lock = new ReentrantLock();
+
+    public void outer() throws InterruptedException {
+        lock.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + "" acquired lock in outer"");
+            Thread.sleep(10000);
+            inner();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void inner() {
+        if (lock.tryLock()) {
+            try {
+                System.out.println(Thread.currentThread().getName() + "" acquired lock in inner"");
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println(Thread.currentThread().getName() + "" ignored the lock"");
+        }
+    }
+}
+
+Now suppose this lock were NOT re-entrant. What would happen to t3 when outer() calls inner()?",Exactly the same - re-entrancy makes no difference here,"inner()'s tryLock would fail, so t3 would print 'ignored the lock'. Worse, with a plain lock() instead of tryLock the thread would wait for a lock only it can release - stuck on itself forever",The JVM would detect it and throw an error,outer() would release its lock automatically first,,2,"This is the reason re-entrancy exists. Without it, any method holding a lock could never safely call another method that needs the same one.",2
+"Real code:
+
+public class Resource {
+
+    private final Lock lock = new ReentrantLock();
+
+    public void outer() throws InterruptedException {
+        lock.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + "" acquired lock in outer"");
+            Thread.sleep(10000);
+            inner();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void inner() {
+        if (lock.tryLock()) {
+            try {
+                System.out.println(Thread.currentThread().getName() + "" acquired lock in inner"");
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println(Thread.currentThread().getName() + "" ignored the lock"");
+        }
+    }
+}
+
+public class Main {
+    public static void main(String[] args) throws InterruptedException {
+        Resource resource = new Resource();
+
+        Thread t3 = new Thread(new OuterRunnable(resource), ""t3"");   // calls outer()
+        Thread t4 = new Thread(new InnerRunnable(resource), ""t4"");   // calls inner()
+
+        t3.start();
+        Thread.sleep(200);
+        t4.start();
+
+        t3.join();
+        t4.join();
+    }
+}
+
+Actual output when this is run:
+
+    t3 acquired lock in outer
+    t4 trying to get lock in inner
+    t4 ignored the lock
+    t3 acquired lock in inner
+
+t4 calls inner() directly while t3 holds the lock, and prints 'ignored the lock'. Why did t4 fail where t3 succeeded on the very same method?",Because t4 started later than t3,"Because re-entrancy applies to the thread that already OWNS the lock. t3 owns it, so it gets in again; t4 is a different thread and is refused",Because inner() can only be called once per program run,Because t4 used tryLock while t3 used lock(),,2,"One run shows both outcomes from one method - which is exactly what makes this demo worth keeping. The deciding factor is who holds the lock, not which method is being called.",2
+"Real code:
+
+public class Resource {
+
+    private final Lock lock = new ReentrantLock();
+
+    public void outer() throws InterruptedException {
+        lock.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + "" acquired lock in outer"");
+            Thread.sleep(10000);
+            inner();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void inner() {
+        if (lock.tryLock()) {
+            try {
+                System.out.println(Thread.currentThread().getName() + "" acquired lock in inner"");
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println(Thread.currentThread().getName() + "" ignored the lock"");
+        }
+    }
+}
+
+Actual output when this is run:
+
+    t3 acquired lock in outer
+    t4 trying to get lock in inner
+    t4 ignored the lock
+    t3 acquired lock in inner
+
+t4 is refused immediately rather than waiting. Which line is responsible, and what would change with `lock.lock()` instead?",The 200 ms sleep in Main - with lock() it would wait 200 ms,"The bare `tryLock()` with no timeout, which gives up at once. With lock() t4 would wait for the full 10 seconds until t3 finished, then print 'acquired lock in inner' instead","The finally block, which rejects other threads",Nothing would change - lock() and tryLock() behave the same,,2,"Three different waiting behaviours in one class: lock() waits forever, tryLock() gives up instantly, tryLock(time, unit) waits a set period. Choosing between them is the whole point of explicit locks.",2
+"Real code:
+
+public class Resource {
+
+    private final Lock lock = new ReentrantLock();
+
+    public void outer() throws InterruptedException {
+        lock.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + "" acquired lock in outer"");
+            Thread.sleep(10000);
+            inner();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void inner() {
+        if (lock.tryLock()) {
+            try {
+                System.out.println(Thread.currentThread().getName() + "" acquired lock in inner"");
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            System.out.println(Thread.currentThread().getName() + "" ignored the lock"");
+        }
+    }
+}
+
+Actual output when this is run:
+
+    t3 acquired lock in outer
+    t4 trying to get lock in inner
+    t4 ignored the lock
+    t3 acquired lock in inner
+
+In the output, t4's 'ignored the lock' appears BEFORE t3's 'acquired lock in inner', even though t3 started first. Why?",The output lines are printed in random order,"t3 takes the lock, then sleeps 10 seconds before it ever reaches inner(). t4 starts 200 ms in, is refused straight away, and finishes long before t3 wakes up",t4 has higher priority than t3,t3's message was buffered and printed late,,2,The 10-second sleep inside the locked region is what makes the whole demo observable - it holds the lock long enough for another thread to arrive and be turned away.,2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+takeProduct() is synchronized, so the consumer holds the lock when it calls wait(). What does wait() do to that lock?",Keeps hold of it while the thread waits,"Releases it. The waiting thread gives the lock up so another thread can enter the synchronized method, and only takes it back after being woken",Passes it directly to the producer,"Destroys it, so a new lock must be created",,2,"This is the single most important fact about wait(). Without releasing the lock, the producer could never get into putProduct(), and the program would stop dead.",2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+Suppose wait() were replaced with Thread.sleep(). What would happen to this program?","It would behave the same, just on a fixed timer","It would freeze. A sleeping thread keeps the lock, so the consumer would sit inside the synchronized method holding the lock while the producer waits outside to get in - neither can ever make progress",It would run faster because no notify is needed,The producer would throw IllegalMonitorStateException,,2,"Sleeping and waiting look similar and differ in the one way that matters here: sleep keeps the lock, wait gives it up.",2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+Both methods use `while (...)` around the wait rather than `if (...)`. Why does that matter?",It does not - with one producer and one consumer either works,"Because being woken is not a promise that the condition changed. With while, the thread re-checks after waking and waits again if needed; with if, it would carry on as though the warehouse were ready when it might not be",Because if statements cannot contain wait(),Because while makes the thread wait multiple times in a row for speed,,2,"With exactly one producer and one consumer an if would usually survive. Add a second consumer and both can be woken for a single product - one takes it, the other proceeds on a stale check.",2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+notify() is called at the end of both methods. What does it actually do?",Immediately hands control to the other thread,"Marks one waiting thread as ready to run again. That thread still has to reacquire the lock, so it only continues after the notifying thread leaves the synchronized method",Releases the lock straight away,Wakes every waiting thread,,2,"notify() is a signal, not a handover. The woken thread joins the queue for the lock like anyone else, which is why the notify can safely sit before the end of the method.",2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+What would happen if wait() or notify() were called from a method that was NOT synchronized?","It would work, just without protecting the data",IllegalMonitorStateException at runtime - you must hold an object's lock to call wait() or notify() on it,The compiler would reject it,The call would be ignored silently,,2,"wait() has to release a lock, and notify() has to signal about one, so both are meaningless unless the calling thread actually holds it.",2
+"Real code:
+
+void main() {
+    Warehouse warehouse = new Warehouse();
+
+    Thread consumer = new Thread(new Consumer(warehouse));
+    Thread producer = new Thread(new Producer(warehouse));
+
+    // Consumer is started FIRST
+    consumer.start();
+
+    // Producer is started SECOND
+    producer.start();
+}
+
+Actual output (first few lines):
+
+    Consumer: Warehouse is empty. Waiting...
+    Producer: Putting product 1
+    Producer: Warehouse is full. Waiting...
+    Consumer: Taking product 1
+    Consumer: Warehouse is empty. Waiting...
+    Producer: Putting product 2
+    Producer: Warehouse is full. Waiting...
+    Consumer: Taking product 2
+
+The consumer is deliberately started FIRST. What does the output show as a result, and why is this a good way to start the demo?","The consumer takes a product before any exists, printing a wrong value","The first line is 'Consumer: Warehouse is empty. Waiting...' - the consumer arrives, finds nothing, and waits. It shows straight away that the consumer correctly does nothing rather than reading an empty warehouse",The consumer throws an exception because the warehouse is empty,"The producer is forced to run first anyway, so the order makes no difference",,2,Starting the consumer first sets up the harder case on purpose. If it had run second there would always be a product waiting and the waiting path would never be exercised.,2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+Actual output (first few lines):
+
+    Consumer: Warehouse is empty. Waiting...
+    Producer: Putting product 1
+    Producer: Warehouse is full. Waiting...
+    Consumer: Taking product 1
+    Consumer: Warehouse is empty. Waiting...
+    Producer: Putting product 2
+    Producer: Warehouse is full. Waiting...
+    Consumer: Taking product 2
+
+The output strictly alternates: put 1, take 1, put 2, take 2, and so on. Which part of Warehouse forces that, given both loops run 5 times independently?","The synchronized keyword, which makes the methods run in turn","The hasProduct flag together with the two while loops - the producer cannot put while it is true and the consumer cannot take while it is false, so neither can run twice in a row","The notify() calls, which alternate between the two threads",The fact that both loops happen to run 5 times,,2,"synchronized alone would only stop them overlapping, not force them to alternate. The alternation comes from the condition each side waits on, since the warehouse holds exactly one item.",2
+"Real code:
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+Why is the boolean hasProduct needed at all, instead of just checking the product value?",It is not needed - checking whether product is 0 would work,"Because the product value alone cannot say whether the warehouse is full or empty. After a product is taken the number is still sitting in the field, so a separate flag is what records that it has already gone",Because booleans are faster to read than ints,Because product is private and cannot be read inside the class,,2,Note takeProduct() never clears product - it only sets hasProduct to false. The flag is the real state; the number is just the payload.,2
+Both classes deal with a thread that cannot proceed yet. How do the two approaches differ in what the waiting thread does?,They are two names for the same mechanism,"tryLock with a timeout gives up after a set time and does something else, so the work may be skipped. wait() gives up the lock and sleeps until another thread signals that the situation has changed, so the work still happens - just later",tryLock waits forever while wait() times out,wait() is for locks and tryLock is for shared data,,2,"One is for 'I am not prepared to wait for this', the other for 'I cannot do my job until someone else does theirs'. Different problems, which is why both exist.",2
+"Real code:
+
+public class Counter {
+
+    Lock lock = new ReentrantLock();
+
+    private int count = 0;
+
+    public void increment() throws InterruptedException {
+
+        if (lock.tryLock(3000, TimeUnit.MILLISECONDS)) {
+            try {
+                Thread.sleep(3000);
+                count++;
+            } catch (Exception e) {
+
+            } finally {
+                lock.unlock();
+            }
+        }
+        else {
+            System.out.println(Thread.currentThread().getName()
+                    + "" dont care about the lock .....will return later"");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+
+public class Warehouse {
+
+    private int product;
+    private boolean hasProduct = false;
+
+    public synchronized void takeProduct() {
+
+        while (!hasProduct) {
+            try {
+                System.out.println(""Consumer: Warehouse is empty. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println(""Consumer: Taking product "" + product);
+        hasProduct = false;
+        notify();
+    }
+
+    public synchronized void putProduct(int product) {
+
+        while (hasProduct) {
+            try {
+                System.out.println(""Producer: Warehouse is full. Waiting..."");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        this.product = product;
+        hasProduct = true;
+
+        System.out.println(""Producer: Putting product "" + product);
+        notify();
+    }
+}
+
+Both classes hold a lock while doing something slow - Counter sleeps 3 seconds inside the lock, the Warehouse waits inside a synchronized method. Why is one a problem and the other not?",Both are equally bad and should be rewritten,"Counter genuinely keeps the lock during its sleep, blocking everyone else - fine for a demo, bad practice in general. The Warehouse's wait() releases the lock, so it is not holding anything while it waits","Both are fine, because each has a timeout","The Warehouse is worse, because a synchronized method locks for longer",,2,Time spent inside a synchronized region only hurts if the lock is actually being held. That is precisely what separates sleeping from waiting.,2
