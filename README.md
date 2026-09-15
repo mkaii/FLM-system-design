@@ -69,7 +69,7 @@ Roughly five blocks:
 
 ## class-13-solid-4-quiz-discussion
 - SOLID part 4 and quiz discussion, plus a SOLID reference PDF
-- Also the home for **every quiz in the course** — `Quiz-CSVs/`, 33 files, around 880 questions
+- Also the home for **every quiz in the course** — `Quiz-CSVs/`, 34 files, around 910 questions
 - Grouped into `oops/`, `solid/`, `design-patterns/`, `concurrency/`, and one folder per project: `parking-lot/`, `vending-machine/`, `snake-game/`
 - `quiz_import_template.csv` is the blank format sample, not a quiz
 - The project quizzes quote real code from this repo, including the bugs we found in class
@@ -229,3 +229,12 @@ Roughly five blocks:
 - `tryLock` with a timeout: wait up to 3 seconds for the lock, and if it does not come, give up and carry on instead of blocking
 - Unlocking always goes in a `finally`, so the lock is released even if something fails
 - Second demo shows a lock is re-entrant: a thread already holding it can take it again in a nested method, while a different thread asking at that moment is turned away immediately
+
+## class-44-ITC-executor-service
+- Threads talking to each other with `wait()` and `notify()`, instead of only locking each other out
+- Producer and consumer share a warehouse that holds one product at a time
+- The producer waits when it is full, the consumer waits when it is empty, and each wakes the other up after acting
+- `wait()` also lets go of the lock, which is what makes it different from sleeping — a sleeping thread keeps the lock and nobody can get in
+- The waiting check is a `while`, not an `if`, so a woken thread checks again instead of assuming things changed
+- The consumer is deliberately started first, so the first thing it does is wait
+- Also a PDF on thread communication and thread pools; `class-plan.txt` lists executor service as the next topic, not coded yet
