@@ -1,0 +1,1832 @@
+questionText,option1,option2,option3,option4,option5,correctOptions,correctOptionExplanation,points
+"Real code:
+
+new ThreadPoolExecutor(
+        corePoolSize, maximumPoolSize,
+        keepAliveTime, TimeUnit.SECONDS,
+        workQueue)
+
+In a ThreadPoolExecutor, what is the actual difference between corePoolSize and maximumPoolSize?","corePoolSize is how many threads exist at startup; maximumPoolSize is how many can ever exist, full stop","corePoolSize is the number of workers created first and kept around by default; maximumPoolSize is the hard ceiling the pool may grow to, but only once the queue can take no more","corePoolSize handles fast tasks, maximumPoolSize handles slow tasks",There is no real difference - both just mean 'number of threads',,2,"Core threads are the pool's normal size. Extra threads, up to maximumPoolSize, are a last resort - reached for only when the queue itself has refused a task.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,                     // corePoolSize
+        5,                     // maximumPoolSize
+        60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+PoolState.print(""before any submit"", executor);
+for (int i = 1; i <= 2; i++) {
+    executor.execute(new SleepTask(i));
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Actual output:
+
+    before any submit              poolSize=0  active=0  queued=0  completed=0  everScheduled=0
+    after submitting task 1        poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    after submitting task 2        poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    ...
+    after termination              poolSize=0  active=0  queued=0  completed=2  everScheduled=2
+
+corePoolSize=2, maximumPoolSize=5. Exactly 2 tasks are submitted. How many worker threads exist once both are running?","5, because maximumPoolSize always applies immediately","2 - poolSize only grows to satisfy work that actually arrives, one worker per task until the core is full","0, because no thread is created until a task finishes","1, because only one thread is needed for 2 quick tasks",,2,"poolSize climbed 0 -> 1 -> 2, one new worker per submitted task, and stopped exactly at corePoolSize since 2 tasks needed no more than that.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,                     // corePoolSize
+        5,                     // maximumPoolSize
+        60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+PoolState.print(""before any submit"", executor);
+for (int i = 1; i <= 2; i++) {
+    executor.execute(new SleepTask(i));
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Same pool (core=2, max=5, queue capacity 3). A THIRD task is now submitted while the first two are still running. Does a third worker get created for it?","Yes immediately, since poolSize (2) is still less than maximumPoolSize (5)","No - poolSize is already at corePoolSize, so the task goes into the queue instead of getting a new worker","Yes, because the queue is empty so there is 'room' for a new thread",It depends on which task finishes first,,2,"A new worker is only created while poolSize < corePoolSize. Once the core is full, the executor's next move is always to try the queue, never to jump straight to another worker.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 3 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Actual output:
+
+    after submitting task 1        poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    after submitting task 2        poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    after submitting task 3        poolSize=2  active=2  queued=1  completed=0  everScheduled=3
+    after submitting task 4        poolSize=2  active=2  queued=2  completed=0  everScheduled=4
+    after submitting task 5        poolSize=2  active=2  queued=3  completed=0  everScheduled=5
+
+core=2, max=5, queue capacity 3. Five 3-second tasks are submitted one after another with the core workers already full. What is poolSize once all five have been submitted?",5 - one worker per task up to maximumPoolSize,"2 - tasks 3, 4 and 5 go into the queue; poolSize does not move at all",3 - one extra worker is created because the queue would otherwise overflow,It cannot be determined without knowing task duration,,2,"Verified: poolSize stayed at 2 through all five submissions, while queued climbed 0,0,1,2,3. The pool does not react to busy core threads by growing - it reacts by queueing.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 3 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Given the previous question's result, what condition would actually have to be true for the pool to create a THIRD worker?",Simply having more than corePoolSize tasks submitted,The queue must refuse a task - which only happens once it is completely full,A task must run for longer than 3 seconds,maximumPoolSize must be reached first,,2,"This is the whole ordering rule in one sentence: extra workers exist to handle a task the queue could not accept, not to handle 'busyness' in general.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Same config (core=2, max=5, queue capacity 3). Eight 4-second tasks are submitted in a row. Walk through what happens to tasks 6, 7 and 8 specifically.","They wait in the queue behind tasks 3, 4 and 5","The queue is already full (3/3) by the time they arrive, so each one forces a brand new worker to be created for it - poolSize climbs 2->3->4->5","They are rejected, since the queue is full","They replace tasks 3, 4 and 5 in the queue",,2,"Tasks 1-2 get core workers, 3-5 fill the queue, and only then does the executor start creating extra workers - one per task, since the queue has nowhere left to put them.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Once all 8 tasks in the previous question have been submitted, which finish FIRST: tasks 3-5 (queued early) or tasks 6-8 (given new workers)?","Tasks 3-5, because they were submitted first","Tasks 6-8, because they started running immediately on new workers, while 3-5 were still sitting in the queue waiting their turn",All 8 finish at the same time,"It alternates - 3, 6, 4, 7, 5, 8",,2,"Submission order and execution order are different things. A task queued early can easily finish LATER than a task submitted after it, if that later task got its own worker instead of waiting.",2
+"Put these four steps in the order ThreadPoolExecutor actually follows when a new task is submitted:
+
+  A. create another worker (up to maximumPoolSize)
+  B. reject the task
+  C. create a worker (while below corePoolSize)
+  D. try to add the task to the queue","A, C, D, B","C, D, A, B","D, C, A, B","C, A, D, B",,2,"corePoolSize first, then the queue, then extra workers up to maximumPoolSize, and only if all three fail is the task rejected. Skipping straight to 'add a worker' the moment core is busy is the single most common misconception.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+core=2, max=6 this time, queue capacity 4. If 20 identical slow tasks are submitted all at once, what is the LARGEST poolSize can ever reach?","20, since every task eventually needs a thread",6 - maximumPoolSize is a hard ceiling no matter how many tasks are waiting,"4, matching the queue capacity","2, because the queue will simply absorb everything",,2,"corePoolSize + queue capacity + (maximumPoolSize - corePoolSize) is the total the pool can be actively working on or holding. Nothing pushes poolSize past maximumPoolSize, ever.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+core=3, max=3 (deliberately equal), queue capacity 5. Ten tasks are submitted. What happens to poolSize as they arrive?",It grows steadily from 3 up toward 10,"It goes to 3 and never changes again - with core equal to max there is no 'extra worker' tier at all, so the queue (and eventually rejection) does all the remaining work",It stays at 0 until the queue is full,"It immediately jumps to 5, matching the queue capacity",,1,"When corePoolSize == maximumPoolSize, step A of the ordering rule (create an extra worker) can never fire, because there is no room above the core. Everything past the first 3 tasks depends entirely on the queue.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Following the previous question (core=3, max=3, queue capacity 5): what happens to task number 9?","It gets a new worker, since maximumPoolSize allows more threads","It is rejected - 3 running + 5 queued = 8 tasks accommodated, and the 9th has nowhere to go since core==max blocks the extra-worker step entirely",It waits indefinitely with no error,It silently overwrites task 8 in the queue,,2,"Total capacity here is corePoolSize (3) + queue capacity (5) = 8. Setting core equal to max is a legitimate way to build a strictly bounded, no-growth pool.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,                     // corePoolSize
+        5,                     // maximumPoolSize
+        60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+PoolState.print(""before any submit"", executor);
+for (int i = 1; i <= 2; i++) {
+    executor.execute(new SleepTask(i));
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+A pool is built with corePoolSize=4 but only 1 task is ever submitted to it in the program's whole lifetime. How many worker threads does the pool actually create?","4, because corePoolSize always creates that many threads upfront","1 - a core worker is created lazily, only as tasks actually arrive needing one, not all at once when the executor is built","0, because 1 task is not enough to trigger core creation",It depends on maximumPoolSize,,2,"corePoolSize is a target ceiling for the lazy-creation phase, not a guaranteed headcount from the moment the executor exists. (A separate method, prestartAllCoreThreads(), exists specifically for anyone who wants them created upfront - not used in these experiments.)",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,                     // corePoolSize
+        5,                     // maximumPoolSize
+        60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+PoolState.print(""before any submit"", executor);
+for (int i = 1; i <= 2; i++) {
+    executor.execute(new SleepTask(i));
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 3 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Comparing experiment 1 (2 tasks) and experiment 2 (5 tasks) on the identical core=2/max=5/queue=3 pool: why does poolSize end at 2 in BOTH cases, despite very different task counts?",Coincidence - the numbers happen to match,"In experiment 1 there simply isn't enough work to need more than 2 workers. In experiment 2 there IS more work, but the queue absorbs tasks 3-5 before the executor ever needs to create a third worker",Because both experiments use the same SleepTask class,Because ArrayBlockingQueue always limits poolSize to corePoolSize,,2,"Same ending number, completely different reasons - one from insufficient demand, one from the queue doing its job. Reading poolSize alone never tells you which situation you're in; you have to check queued too.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+core=2, max=5, ArrayBlockingQueue(3). Six tasks are submitted. Predict poolSize and queued once all six have been accepted.","poolSize=5, queued=1","poolSize=2, queued=3, plus 1 extra worker created for the 6th -> poolSize=3, queued=3","poolSize=6, queued=0","poolSize=2, queued=4",,2,"Tasks 1-2 -> core workers. Tasks 3-5 -> fill the queue (now full at 3). Task 6 finds the queue full, so it forces a new worker: poolSize becomes 3, queued stays at 3.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Same setup as the previous question. What is poolSize + queued equal to at every single point during that submission sequence, from task 1 through task 6?",Always exactly 6,"It equals however many tasks have been submitted so far MINUS how many have already completed - it is not a fixed number, it just tracks total accepted work not yet finished",Always exactly corePoolSize + queue capacity,Always exactly maximumPoolSize,,2,"poolSize+queued is 'how much accepted work exists right now', which naturally grows as tasks arrive and shrinks as they finish - there's no fixed target for it to equal.",2
+"A colleague says: 'maximumPoolSize is basically decoration - the pool almost never actually uses the extra threads.' Based on everything in experiments 1-3, is that a fair generalisation?","Yes, extra workers are essentially never created in practice","No - it depends entirely on whether the queue fills up. With a small or full queue, extra workers get created constantly; the real variable is queue behaviour, which the next several experiments dig into","Yes, because maximumPoolSize only matters for SynchronousQueue","No, extra workers are always created immediately regardless of the queue",,2,"This is exactly the pivot for the rest of the quiz: whether maximumPoolSize 'does anything' is entirely a property of the QUEUE, not of maximumPoolSize itself.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+Actual output:
+
+    accepted task 1                poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    accepted task 2                poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    ...
+    accepted task 8                poolSize=5  active=5  queued=3  completed=0  everScheduled=8
+    !!! Task 9 REJECTED -> RejectedExecutionException
+
+core=2, max=5, queue capacity 3, AbortPolicy. What is the total number of tasks this pool can be holding (running + queued) at once, before a 9th is rejected?","5, matching maximumPoolSize",8 - maximumPoolSize (5 running) plus queue capacity (3 waiting),"3, matching the queue capacity only","Unlimited, since AbortPolicy only throws for the queue",,1,"Verified: task 8 was accepted (poolSize=5, queued=3), task 9 threw RejectedExecutionException. Total capacity is always maximumPoolSize + queue capacity for a bounded queue.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+Actual output:
+
+    accepted task 1                poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    accepted task 2                poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    ...
+    accepted task 8                poolSize=5  active=5  queued=3  completed=0  everScheduled=8
+    !!! Task 9 REJECTED -> RejectedExecutionException
+
+Which THREE conditions must ALL be true at once for a task to be rejected?","The task is large, the JVM is low on memory, and the queue is a LinkedBlockingQueue","poolSize has reached maximumPoolSize, the queue is completely full, and another task is submitted anyway","corePoolSize is 0, the queue is empty, and shutdown() has been called",The task throws an exception when run() executes,,2,"Missing any one of the three means the task gets accepted somewhere - a free worker, a free queue slot, or room to grow the pool. Rejection is specifically what happens when none of those exist.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+core=2, max=5, queue capacity 3, AbortPolicy. If the queue capacity were changed to 6 instead, how many tasks could the pool accept before rejecting one?","8, unchanged",11 - maximumPoolSize (5) + the new queue capacity (6),"6, matching only the new queue capacity","5, matching only maximumPoolSize",,2,Total capacity always tracks maximumPoolSize + queue capacity for a bounded queue - change either number and the rejection point moves with it.,1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+Same pool, but AbortPolicy is replaced with nothing specified at all (the default constructor without a RejectedExecutionHandler argument). What actually happens on the 9th task?",Nothing is rejected - a default handler always accepts,The exact same thing as AbortPolicy - it IS the default policy when none is given,The task is silently dropped instead of throwing,A NullPointerException occurs because no policy was set,,2,AbortPolicy isn't just one option among several - it's what you already get if you don't pick anything. Deliberately naming it made the choice visible rather than accidental.,1
+"Real code:
+
+public static void print(String label, ThreadPoolExecutor executor) {
+    Log.line(String.format(""%-30s poolSize=%d  active=%d  queued=%d  completed=%d  everScheduled=%d"",
+            label,
+            executor.getPoolSize(),
+            executor.getActiveCount(),
+            executor.getQueue().size(),
+            executor.getCompletedTaskCount(),
+            executor.getTaskCount()));
+}
+
+Which of these five values only ever goes UP, never down, for the life of the executor? (select all that apply)",poolSize,active,queued,completed,everScheduled,"4,5","completed and everScheduled (getTaskCount()) are running totals since the executor was created. poolSize, active and queued are snapshots of right now and can rise and fall freely as work arrives and finishes.",2
+"Real code:
+
+public static void print(String label, ThreadPoolExecutor executor) {
+    Log.line(String.format(""%-30s poolSize=%d  active=%d  queued=%d  completed=%d  everScheduled=%d"",
+            label,
+            executor.getPoolSize(),
+            executor.getActiveCount(),
+            executor.getQueue().size(),
+            executor.getCompletedTaskCount(),
+            executor.getTaskCount()));
+}
+
+A worker thread exists, has picked up a task, but the task's run() method has a bug and is stuck in an infinite loop doing nothing useful. What do poolSize and active read for that worker?","poolSize counts it, active does not - a stuck task is not 'active'","Both poolSize and active count it - the executor has no way to know the task is stuck, so as far as it can tell that worker is legitimately busy","Neither counts it, since the task never calls a method the executor tracks",poolSize drops to exclude it once it has run for 'too long',,2,"active simply means 'currently running something', with no concept of whether that something is making progress. A hung task looks identical to a genuinely busy one from the executor's point of view - this is exactly why timeouts on individual tasks are a separate concern the pool does not solve for you.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+core=2, max=5, queue capacity 3. At the moment 5 tasks are running and the queue holds 3 more, what does getActiveCount() read, and is it possible for active to ever be LOWER than poolSize?",active always equals poolSize - they are the same number,"active reads 5 here, matching poolSize. But yes, active can be lower: a worker that exists but currently has no task to run (idle, waiting for the next one) counts in poolSize but not in active",active is always 0 unless a task is submitted this exact instant,active can never be measured while tasks are running,,1,"A pool can have, say, poolSize=5 and active=2 once most of the burst work has finished but the extra workers haven't timed out yet - three threads exist and are idle, not gone and not busy.",2
+"A pool reports poolSize=5, active=3, queued=2, completed=40, everScheduled=45. How many tasks does this pool still have left to get through (running plus waiting)?",5,3 + 2 = 5,45 - 40 = 5,"Both B and C are correct, and they agree by definition",,4,active (currently running) + queued (currently waiting) is exactly the same quantity as everScheduled minus completed - two different ways of counting the same unfinished work.,2
+Which pair of counters would you check to find out whether an executor is currently under so much pressure that it has been forced past its normal core size?,completed and everScheduled,"poolSize and corePoolSize - if poolSize exceeds corePoolSize, the executor has had to create extra workers, meaning the queue filled up at some point",active and queued added together,There is no way to tell this from the counters,,2,poolSize above corePoolSize is direct evidence the queue was once full enough to force growth - a genuinely useful health signal for a running system.,2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+Would checking active < poolSize tell you the SAME thing as checking queued > 0? Are they describing the same situation?","Yes, they always mean exactly the same thing","No - active < poolSize means some existing WORKER has nothing to do; queued > 0 means some TASK has nowhere to run yet. A pool can have both, either, or neither at once","No - active < poolSize is impossible, so the question doesn't apply","Yes, because both numbers come from the same underlying field",,2,"Picture a burst that just finished: workers still exist and are momentarily idle (active < poolSize) while the queue is empty (queued = 0). Or the opposite during a growing burst. Two independent signals, not two names for the same thing.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+You catch a RejectedExecutionException from execute(). What has definitely happened to the task that triggered it?",It ran briefly and then was cancelled,It was never run at all and never entered the queue - execute() failed before the task was accepted anywhere,It is queued and will run once space frees up,It ran on the calling thread instead,,2,"Rejection means the task was refused entry entirely. Whatever work it represented simply did not happen, unless the calling code does something about the exception (retry it, log it, run it another way).",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+Is it possible for a RejectedExecutionException to be thrown even while poolSize is still below maximumPoolSize?","No, rejection can only happen once poolSize equals maximumPoolSize","Yes - if the QUEUE were unbounded this could never happen, but if using a bounded queue smaller than expected, or if maximumPoolSize was reached and then a worker died and was replaced slower than tasks arrived, timing edge cases are possible. In the straightforward case shown here though: no, rejection strictly requires poolSize == maximumPoolSize AND the queue full","Yes, rejection is random and can happen at any time","Yes, whenever more than corePoolSize tasks exist",,2,"For the executors built in these experiments, rejection is deterministic: pool at max AND queue full AND a new task arrives. All three, together, every time.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,          // keepAliveTime
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 2 seconds
+}
+PoolState.print(""right after the burst"", executor);
+// ... nothing else submitted for the next 12+ seconds ...
+
+What is keepAliveTime actually measuring?",How long a task is allowed to run before being killed,How long an IDLE non-core worker thread is allowed to sit with nothing to do before it is allowed to terminate,How long the whole executor stays alive before shutting down automatically,How long a task can wait in the queue before being discarded,,1,It has nothing to do with tasks or the queue directly - it is purely about how patient the pool is with a worker that currently has no work.,1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,          // keepAliveTime
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 2 seconds
+}
+PoolState.print(""right after the burst"", executor);
+// ... nothing else submitted for the next 12+ seconds ...
+
+core=2, max=5, keepAliveTime=5 seconds. A burst of 8 short tasks forces poolSize up to 5. Once all the work is done and nothing new is submitted, what happens to poolSize over the following 20 seconds?","It stays at 5 forever, since threads never terminate once created","It falls back down to 2 - the 3 extra (non-core) workers time out after about 5 idle seconds each, while the 2 core workers stay alive",It falls all the way to 0,"It grows further, since idle time causes more workers to be created",,2,"keepAliveTime by default only applies to threads ABOVE corePoolSize. The 2 core workers are exempt and simply wait for the next task, however long that takes.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,          // keepAliveTime
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 2 seconds
+}
+PoolState.print(""right after the burst"", executor);
+// ... nothing else submitted for the next 12+ seconds ...
+
+Why does the pool bother creating those 3 extra workers in experiment 6 at all, if they are just going to time out and disappear 5 seconds later?",It is a bug - they should never have been created,"They were needed to handle a genuine burst of demand. Once the burst passes, keeping unused threads around wastes memory and OS resources, so the pool sheds them back down to its normal size",Java requires exactly 5 workers whenever maximumPoolSize is 5,They are created for load-testing purposes only,,2,"This is the entire point of keepAliveTime: let the pool grow to absorb a spike, then shrink back once the spike passes, rather than either permanently over-provisioning or rejecting the spike outright.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+executor.allowCoreThreadTimeOut(true);
+
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 1 second
+}
+// ... nothing else submitted afterwards ...
+
+What does allowCoreThreadTimeOut(true) change about the behaviour just described?",Nothing - core threads always eventually time out regardless,"It removes the exemption core threads normally have: with it enabled, even the original 2 core workers can time out and disappear if idle for longer than keepAliveTime, so the pool can shrink all the way to 0",It makes non-core threads immune to timing out instead,It only affects threads created after the method is called,,2,"Without this call, corePoolSize is a floor the pool never goes below while idle. With it, there is no floor at all - an idle pool can genuinely go empty.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+executor.allowCoreThreadTimeOut(true);
+
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 1 second
+}
+// ... nothing else submitted afterwards ...
+
+Compare experiment 6 (no core timeout) and experiment 7 (allowCoreThreadTimeOut(true)), both with keepAliveTime=5s, after all work is done and 20 idle seconds pass. What is poolSize in each?","Experiment 6: 2, Experiment 7: 2 - identical, since keepAliveTime is the same","Experiment 6: 2 (core workers survive), Experiment 7: 0 (core workers also time out)","Experiment 6: 0, Experiment 7: 2 - the opposite","Both reach 0, since 20 seconds is much longer than keepAliveTime either way",,2,"Same keepAliveTime value, completely different floor, purely because of the one boolean flag. This is the cleanest illustration that 'core thread' describes creation priority, not permanence.",2
+"A pool has corePoolSize=0, maximumPoolSize=10, and a bounded queue. Is this a legal, sensible configuration?","No, corePoolSize can never be 0","Yes - it means ALL workers are treated as 'extra' and can time out when idle, so with no work at all the pool can shrink to zero threads, only creating workers as tasks actually arrive","Yes, but the pool will never process any tasks","No, because the queue would then be ignored entirely",,2,"corePoolSize=0 is a legitimate way to build a pool that fully empties out during quiet periods without needing allowCoreThreadTimeOut at all, since there's no core tier to be exempt in the first place.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+executor.allowCoreThreadTimeOut(true);
+
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 1 second
+}
+// ... nothing else submitted afterwards ...
+
+The Javadoc for allowCoreThreadTimeOut states it requires keepAliveTime to be greater than zero. Why would a keepAliveTime of 0 combined with this flag not make sense?",Because 0 is not a valid long value,"Because a keepAliveTime of 0 combined with allowing core threads to time out would mean every idle worker - including brand new core ones - could be torn down virtually instantly, defeating the entire purpose of having a pool of reusable threads",Because keepAliveTime of 0 is reserved for SynchronousQueue only,There is no real restriction - the Javadoc is just a suggestion,,2,"A pool that destroys its own workers the instant they go idle isn't really pooling anything - you'd be back to creating a fresh thread per task, which is exactly what a thread pool exists to avoid.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,          // keepAliveTime
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 2 seconds
+}
+PoolState.print(""right after the burst"", executor);
+// ... nothing else submitted for the next 12+ seconds ...
+
+keepAliveTime=5 seconds. An extra (non-core) worker finishes a task at second 10 and immediately picks up ANOTHER waiting task at second 10.3. Does the keepAliveTime clock ever get a chance to expire for that worker?","Yes, it always expires exactly every 5 seconds regardless of activity",No - the idle timer only starts counting once a worker has genuinely nothing left to do. Picking up new work almost immediately resets that clock before it can reach 5 seconds,"Yes, because keepAliveTime is measured from when the thread was first created",It depends on which queue implementation is used,,2,"keepAliveTime measures idle time specifically, not total lifetime. A consistently busy extra worker never times out, no matter how long the pool has been running.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,          // keepAliveTime
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 2 seconds
+}
+PoolState.print(""right after the burst"", executor);
+// ... nothing else submitted for the next 12+ seconds ...
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+executor.allowCoreThreadTimeOut(true);
+
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 1 second
+}
+// ... nothing else submitted afterwards ...
+
+Why did both experiment 6 and experiment 7 use a small keepAliveTime (5 seconds) rather than the default-ish 60 seconds used in experiments 1-5?",5 seconds is required by the ArrayBlockingQueue class,"So the timeout could actually be OBSERVED within a reasonable demo length - with 60 seconds, you would need to wait a full minute of idle time before seeing any change in poolSize",Because allowCoreThreadTimeOut only works with values under 10 seconds,It makes no difference to the demo either way,,1,"The keepAliveTime value in experiments 1-5 was irrelevant to what they were testing, so it was left generous. Experiments 6 and 7 exist specifically to observe this timeout, so it was shortened to make the wait practical.",1
+"Which single sentence best captures what 'core thread' actually means in ThreadPoolExecutor, given experiments 6 and 7?",A thread that is permanently pinned and can never be destroyed under any configuration,A thread the pool prioritises creating first and keeps around by default while idle - but that guarantee can be switched off with allowCoreThreadTimeOut,A thread that runs only the first task ever submitted,"A special, faster kind of thread reserved for urgent work",,2,"'Core' describes a default policy (create these first, keep these around), not an unbreakable property of the thread itself.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+Actual output:
+
+    check 1     poolSize=2  active=2  queued=18  completed=0  everScheduled=20
+    check 2     poolSize=2  active=2  queued=18  completed=0  everScheduled=20
+    check 3     poolSize=2  active=2  queued=16  completed=2  everScheduled=20
+    check 4     poolSize=2  active=2  queued=14  completed=4  everScheduled=20
+    check 5     poolSize=2  active=2  queued=12  completed=6  everScheduled=20
+    >>> poolSize never exceeded 2 even though maximumPoolSize was 5
+
+core=2, max=5, new LinkedBlockingQueue<Runnable>() with NO number passed to the constructor. What is the effective capacity of that queue, and why does that matter for poolSize?","Capacity 0, so every task is rejected","Effectively unbounded (Integer.MAX_VALUE). Because it never refuses a task, step 3 of the ordering rule ('queue is full, make another worker') is never reached, so poolSize never grows past corePoolSize","Capacity equals maximumPoolSize, so poolSize grows to 5","Capacity 3, the default for LinkedBlockingQueue",,2,"Verified: 20 tasks submitted, queued climbed to 18, and poolSize stayed at 2 for the entire run. maximumPoolSize=5 never mattered at all.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+Actual output:
+
+    check 1     poolSize=2  active=2  queued=18  completed=0  everScheduled=20
+    check 2     poolSize=2  active=2  queued=18  completed=0  everScheduled=20
+    check 3     poolSize=2  active=2  queued=16  completed=2  everScheduled=20
+    check 4     poolSize=2  active=2  queued=14  completed=4  everScheduled=20
+    check 5     poolSize=2  active=2  queued=12  completed=6  everScheduled=20
+    >>> poolSize never exceeded 2 even though maximumPoolSize was 5
+
+Given the previous result, if maximumPoolSize were changed from 5 to 500 in that same experiment 8 setup, what would change?",poolSize would now be able to reach 500 under heavy load,"Nothing at all - the unbounded queue still never refuses a task, so the extra-worker step is still never reached and poolSize still tops out at corePoolSize (2)",The queue would become bounded automatically,The 20 tasks would now run twice as fast,,2,"This is the sharpest lesson in the whole project: maximumPoolSize is dead configuration when paired with an unbounded queue, no matter how large you set it.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>(3));    // capacity 3 = bounded, same class as experiment 8
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));       // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Actual output:
+
+    accepted task 1     poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    accepted task 2     poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    accepted task 3     poolSize=2  active=2  queued=1  completed=0  everScheduled=3
+    accepted task 4     poolSize=2  active=2  queued=2  completed=0  everScheduled=4
+    accepted task 5     poolSize=2  active=2  queued=3  completed=0  everScheduled=5
+    accepted task 6     poolSize=3  active=3  queued=3  completed=0  everScheduled=6
+    accepted task 7     poolSize=4  active=4  queued=3  completed=0  everScheduled=7
+    accepted task 8     poolSize=5  active=5  queued=3  completed=0  everScheduled=8
+    !!! Task 9 REJECTED - pool at max and queue full
+
+Experiment 9 uses the exact same class, new LinkedBlockingQueue<Runnable>(3), just WITH a capacity number this time. Compare its behaviour to experiment 8's.","Identical - the class is the same, so the behaviour must be the same","Completely different - poolSize now climbs all the way to 5 and a 9th task is rejected, because a capacity of 3 makes this queue refuse tasks once full, which is exactly what triggers extra-worker creation",LinkedBlockingQueue always ignores the capacity argument,The difference is only in which exception gets thrown,,2,"Verified: poolSize went 1,2,2,2,2,3,4,5 and task 9 was rejected - textbook bounded-queue behaviour, from the SAME class experiment 8 used unbounded.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>(3));    // capacity 3 = bounded, same class as experiment 8
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));       // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Given experiments 8 and 9 use the identical LinkedBlockingQueue class but behave completely differently, what is the actual variable that determines ThreadPoolExecutor's behaviour?",Whether the queue is a Linked or an Array based implementation,Whether the queue is bounded (has a fixed capacity) or effectively unbounded - not which specific class was chosen,Whether ArrayBlockingQueue or LinkedBlockingQueue was imported,The number of tasks submitted,,2,'LinkedBlockingQueue vs ArrayBlockingQueue' is the wrong question to ask. 'Bounded vs unbounded' is the one that actually predicts pool growth.,1
+"Real code:
+
+private static void runWorkload(String label, BlockingQueue<Runnable> queue) {
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS, queue);
+    int accepted = 0, rejected = 0;
+    for (int i = 1; i <= 9; i++) {
+        try {
+            executor.execute(new SleepTask(i));
+            accepted++;
+        } catch (RejectedExecutionException e) {
+            rejected++;
+        }
+    }
+    Log.line(label + "" accepted="" + accepted + ""  rejected="" + rejected);
+}
+
+// called once with new ArrayBlockingQueue<Runnable>(3)
+// called once with new LinkedBlockingQueue<Runnable>(3)
+
+Experiment 10 runs the identical 9-task workload through ArrayBlockingQueue(3) and LinkedBlockingQueue(3) separately. Predict whether the accepted/rejected counts differ between the two.","ArrayBlockingQueue will reject more tasks, since arrays are fixed-size","They come out the same - both are bounded to capacity 3, and for ThreadPoolExecutor's purposes what matters is only whether the queue can refuse a task, not its internal storage mechanism",LinkedBlockingQueue will accept unlimited tasks regardless of the 3,"ArrayBlockingQueue cannot be used with execute(), only LinkedBlockingQueue can",,2,"Both bounded to the same number, both refuse a 4th item, both produce identical executor behaviour. The internal difference (array of fixed slots vs. a linked list of nodes) is invisible to the pool.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new SynchronousQueue<Runnable>());
+
+for (int i = 1; i <= 7; i++) {
+    try {
+        executor.execute(new SleepTask(i));     // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Actual output:
+
+    accepted task 1     poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    accepted task 2     poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    accepted task 3     poolSize=3  active=3  queued=0  completed=0  everScheduled=3
+    accepted task 4     poolSize=4  active=4  queued=0  completed=0  everScheduled=3
+    accepted task 5     poolSize=5  active=5  queued=0  completed=0  everScheduled=5
+    !!! Task 6 REJECTED - no worker free and pool is at max
+    !!! Task 7 REJECTED - no worker free and pool is at max
+
+core=2, max=5, SynchronousQueue. Does this queue ever hold any waiting tasks in it, even briefly?","Yes, up to its default capacity of 1","No - a SynchronousQueue has no storage at all. A task can only be 'handed off' directly to a worker that is ready to take it right now; if none is ready, the executor must immediately try creating a new worker instead","Yes, but only while the pool is below corePoolSize","Yes, up to maximumPoolSize tasks",,1,Verified: queued stayed at 0 through the entire run of 7 submissions. Nothing was ever 'waiting' - every accepted task went straight into a worker.,1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new SynchronousQueue<Runnable>());
+
+for (int i = 1; i <= 7; i++) {
+    try {
+        executor.execute(new SleepTask(i));     // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Actual output:
+
+    accepted task 1     poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    accepted task 2     poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    accepted task 3     poolSize=3  active=3  queued=0  completed=0  everScheduled=3
+    accepted task 4     poolSize=4  active=4  queued=0  completed=0  everScheduled=3
+    accepted task 5     poolSize=5  active=5  queued=0  completed=0  everScheduled=5
+    !!! Task 6 REJECTED - no worker free and pool is at max
+    !!! Task 7 REJECTED - no worker free and pool is at max
+
+Given SynchronousQueue never accepts a task into storage, what does that force step 2 of the ordering rule ('try the queue') to do on almost every submission once the core is full?","It always succeeds, since the queue is technically empty","It always fails, since there's no free worker waiting to take the handoff at that instant - so the executor is forced straight to step 3 (create another worker) far more aggressively than a bounded queue would",It blocks forever until a worker frees up,It behaves exactly like ArrayBlockingQueue(0),,2,"Verified: poolSize climbed 1,2,3,4,5 in direct lockstep with the first 5 submissions - no plateau at corePoolSize the way ArrayBlockingQueue(3) produced. Workers grow to max almost immediately.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new SynchronousQueue<Runnable>());
+
+for (int i = 1; i <= 7; i++) {
+    try {
+        executor.execute(new SleepTask(i));     // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Actual output:
+
+    accepted task 1     poolSize=1  active=1  queued=0  completed=0  everScheduled=1
+    accepted task 2     poolSize=2  active=2  queued=0  completed=0  everScheduled=2
+    accepted task 3     poolSize=3  active=3  queued=0  completed=0  everScheduled=3
+    accepted task 4     poolSize=4  active=4  queued=0  completed=0  everScheduled=3
+    accepted task 5     poolSize=5  active=5  queued=0  completed=0  everScheduled=5
+    !!! Task 6 REJECTED - no worker free and pool is at max
+    !!! Task 7 REJECTED - no worker free and pool is at max
+
+Compare the point at which rejection happens: experiment 4 (ArrayBlockingQueue(3)) accepts 8 tasks before rejecting the 9th. Experiment 11 (SynchronousQueue) accepts only 5 before rejecting the 6th. Why fewer?",SynchronousQueue has a smaller default capacity than ArrayBlockingQueue,"SynchronousQueue effectively contributes ZERO extra capacity - total capacity here is just maximumPoolSize (5) + 0, versus maximumPoolSize (5) + queue capacity (3) = 8 for the bounded queue",Task duration differs between the two experiments,SynchronousQueue rejects tasks even when workers are free,,2,"The formula (maximumPoolSize + queue capacity) still holds - SynchronousQueue's capacity is simply 0, so it contributes nothing extra to total capacity.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new SynchronousQueue<Runnable>());
+
+for (int i = 1; i <= 7; i++) {
+    try {
+        executor.execute(new SleepTask(i));     // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Rank these three queue choices from FEWEST extra workers created under sustained heavy load to MOST, all else being equal: (a) unbounded LinkedBlockingQueue, (b) ArrayBlockingQueue(3), (c) SynchronousQueue.","a, b, c - unbounded creates the fewest, SynchronousQueue creates the most","c, b, a","b, a, c","a, c, b",,1,"Unbounded never forces growth past corePoolSize at all. A small bounded queue forces some growth once it fills. SynchronousQueue, having no storage, forces growth almost immediately on every submission past the core.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+A production team says 'we set maximumPoolSize to 50 so we can handle traffic spikes better' but their queue is Executors.newFixedThreadPool()'s default, an unbounded LinkedBlockingQueue. Will raising maximumPoolSize to 50 help with a traffic spike?","Yes, definitely - more maximumPoolSize always means more capacity to handle bursts","No - with an unbounded queue, the extra-worker step is never reached at all, so poolSize will never exceed corePoolSize regardless of what maximumPoolSize is set to. The spike just queues up instead","Yes, but only if keepAliveTime is also increased","No, because unbounded queues ignore maximumPoolSize entirely and reject everything",,2,"This is precisely the trap experiment 8 was built to expose. The fix for that team isn't a bigger maximumPoolSize - it's a bounded queue, or a different queue class entirely.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+What is the practical downside of an unbounded queue that experiment 8's design comment specifically warns about?",Tasks execute out of order,"Work piles up in memory instead of being rejected or triggering more workers - under sustained overload, an unbounded queue can grow until the JVM runs out of memory, rather than failing fast",The queue becomes slower to read from as it grows,Tasks time out after 60 seconds automatically,,2,"A bounded queue plus a sensible rejection policy fails fast and visibly. An unbounded queue fails silently and later, usually as an OutOfMemoryError under real load.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new SynchronousQueue<Runnable>());
+
+for (int i = 1; i <= 7; i++) {
+    try {
+        executor.execute(new SleepTask(i));     // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+You need a pool where EVERY submitted task either gets a worker immediately or is rejected outright - no waiting in a queue under any circumstance. Which queue type fits, and why?","An unbounded LinkedBlockingQueue, since it never rejects","SynchronousQueue - since it has zero storage, a task is either handed directly to a free/new worker or it fails, with nothing ever sitting in between","ArrayBlockingQueue(1), since capacity 1 is the smallest bounded option",Any queue works the same way for this requirement,,1,"This is a real, common pattern: SynchronousQueue is chosen specifically when 'wait in line' is not an acceptable outcome for a task - it should run now or fail now.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>(3));    // capacity 3 = bounded, same class as experiment 8
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));       // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+private static void runWorkload(String label, BlockingQueue<Runnable> queue) {
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS, queue);
+    int accepted = 0, rejected = 0;
+    for (int i = 1; i <= 9; i++) {
+        try {
+            executor.execute(new SleepTask(i));
+            accepted++;
+        } catch (RejectedExecutionException e) {
+            rejected++;
+        }
+    }
+    Log.line(label + "" accepted="" + accepted + ""  rejected="" + rejected);
+}
+
+// called once with new ArrayBlockingQueue<Runnable>(3)
+// called once with new LinkedBlockingQueue<Runnable>(3)
+
+For a bounded queue of capacity 3 (whether Array or Linked based), what determines exactly when the FIRST extra worker gets created, in terms of submission count, given corePoolSize=2?",Always on the 3rd submission,"On the 6th submission - 2 go to core workers, the next 3 fill the queue to its capacity, and only the one after that (the 6th) finds the queue full and forces a new worker",Always on the 4th submission,It varies randomly,,2,"corePoolSize + queueCapacity + 1 = the submission number that first forces growth. Here: 2 + 3 + 1 = 6, matching what was verified in experiment 9's output.",2
+"Real code:
+
+All four rejection policies below are tested on the SAME setup:
+
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<Runnable>(3),
+            new ThreadPoolExecutor.XxxPolicy());       // one of the four
+
+    for (int i = 1; i <= 8; i++) {
+        executor.execute(new SleepTask(i));            // saturates pool (5) + queue (3) = 8
+    }
+    // pool is now completely saturated
+    executor.execute(new MarkerTask(99));              // MarkerTask just prints if it ever runs
+
+// AbortPolicy
+
+With AbortPolicy, what happens to MarkerTask 99, and what does the code that called execute() experience?",MarkerTask 99 runs on the submitting thread; execute() returns normally,MarkerTask 99 never runs at all; execute() throws RejectedExecutionException back to the caller,MarkerTask 99 is queued for later; execute() returns normally,MarkerTask 99 runs on a new pool thread beyond maximumPoolSize,,2,"AbortPolicy is the loud, fail-fast option: the caller is told immediately and unambiguously that the work was refused.",1
+"Real code:
+
+All four rejection policies below are tested on the SAME setup:
+
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<Runnable>(3),
+            new ThreadPoolExecutor.XxxPolicy());       // one of the four
+
+    for (int i = 1; i <= 8; i++) {
+        executor.execute(new SleepTask(i));            // saturates pool (5) + queue (3) = 8
+    }
+    // pool is now completely saturated
+    executor.execute(new MarkerTask(99));              // MarkerTask just prints if it ever runs
+
+// CallerRunsPolicy
+
+With CallerRunsPolicy, which thread actually executes MarkerTask 99's run() method?",A brand new dedicated thread created just for this task,"Whichever thread called execute() in the first place - in this experiment, that is main itself","One of the existing pool-1-thread-N workers, interrupting its current task",No thread - the task is silently skipped,,2,"The 'caller' in CallerRunsPolicy means exactly that: the thread that tried to submit the work is handed the work to do itself, synchronously, before execute() can return.",1
+"Real code:
+
+All four rejection policies below are tested on the SAME setup:
+
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<Runnable>(3),
+            new ThreadPoolExecutor.XxxPolicy());       // one of the four
+
+    for (int i = 1; i <= 8; i++) {
+        executor.execute(new SleepTask(i));            // saturates pool (5) + queue (3) = 8
+    }
+    // pool is now completely saturated
+    executor.execute(new MarkerTask(99));              // MarkerTask just prints if it ever runs
+
+// CallerRunsPolicy
+
+What is the practical consequence for a producer thread that keeps calling execute() rapidly, if the pool is saturated and CallerRunsPolicy is in effect?",No consequence - execute() always returns instantly regardless of policy,"The producer thread itself gets stuck running the rejected task, which takes as long as that task takes - naturally slowing the producer down and giving the pool time to catch up",The producer thread is terminated,The producer thread's rejected tasks are batched and run all at once later,,2,"This is CallerRunsPolicy's real value: it acts as a natural brake, or 'backpressure', on whoever is generating work faster than the pool can consume it - without losing any work or throwing any exception.",2
+"Real code:
+
+All four rejection policies below are tested on the SAME setup:
+
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<Runnable>(3),
+            new ThreadPoolExecutor.XxxPolicy());       // one of the four
+
+    for (int i = 1; i <= 8; i++) {
+        executor.execute(new SleepTask(i));            // saturates pool (5) + queue (3) = 8
+    }
+    // pool is now completely saturated
+    executor.execute(new MarkerTask(99));              // MarkerTask just prints if it ever runs
+
+// DiscardPolicy
+
+With DiscardPolicy, what does the calling code see when it calls execute(new MarkerTask(99))?","A RejectedExecutionException, same as AbortPolicy","Nothing unusual at all - execute() returns normally, no exception, and MarkerTask 99 simply never runs, with no signal anywhere that this happened",A warning printed to the console automatically,A Future that reports isCancelled() = true,,2,This is the most dangerous of the four in terms of visibility. Work vanishes with zero trace unless you already know to expect it and check for it some other way.,1
+"Real code:
+
+All four rejection policies below are tested on the SAME setup:
+
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<Runnable>(3),
+            new ThreadPoolExecutor.XxxPolicy());       // one of the four
+
+    for (int i = 1; i <= 8; i++) {
+        executor.execute(new SleepTask(i));            // saturates pool (5) + queue (3) = 8
+    }
+    // pool is now completely saturated
+    executor.execute(new MarkerTask(99));              // MarkerTask just prints if it ever runs
+
+// DiscardPolicy
+
+Under what kind of real workload would DiscardPolicy actually be the RIGHT choice rather than a dangerous one?","Processing financial transactions, where every one matters","Something like a live metrics or heartbeat ping, where losing an occasional sample under heavy load is completely fine and definitely preferable to blocking or crashing",It is never the right choice under any circumstances,Any workload where tasks are cheap to create,,2,"No policy is universally bad - DiscardPolicy is dangerous specifically when losing work matters, and perfectly reasonable when it genuinely does not.",2
+"Real code:
+
+All four rejection policies below are tested on the SAME setup:
+
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            2, 5, 60, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<Runnable>(3),
+            new ThreadPoolExecutor.XxxPolicy());       // one of the four
+
+    for (int i = 1; i <= 8; i++) {
+        executor.execute(new SleepTask(i));            // saturates pool (5) + queue (3) = 8
+    }
+    // pool is now completely saturated
+    executor.execute(new MarkerTask(99));              // MarkerTask just prints if it ever runs
+
+// DiscardOldestPolicy
+
+With DiscardOldestPolicy, describe precisely what happens when MarkerTask 99 is submitted to an already-saturated pool.",MarkerTask 99 is discarded instead of the oldest task,"The task that has been sitting in the queue longest is thrown away to make room, and MarkerTask 99 is then submitted again (and this time succeeds, taking that freed slot)",The oldest RUNNING task is stopped and MarkerTask 99 replaces it,All queued tasks are discarded and only MarkerTask 99 remains,,2,'Discard oldest' always refers to the oldest entry in the QUEUE specifically - never anything already handed to a worker.,1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,                          // core = max = 2, on purpose
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.DiscardOldestPolicy());
+
+executor.execute(new LongRunningTask(1));   // sleeps 15 seconds
+executor.execute(new LongRunningTask(2));   // sleeps 15 seconds
+// tasks 1 and 2 are now RUNNING on the two workers
+
+executor.execute(new QueuedTask(3));
+executor.execute(new QueuedTask(4));
+executor.execute(new QueuedTask(5));
+Log.line(""QUEUE (full): "" + executor.getQueue());     // [Task-3, Task-4, Task-5]
+
+executor.execute(new QueuedTask(6));
+Log.line(""after 6: "" + executor.getQueue());           // [Task-4, Task-5, Task-6]
+
+executor.execute(new QueuedTask(7));
+Log.line(""after 7: "" + executor.getQueue());           // [Task-5, Task-6, Task-7]
+
+Actual output:
+
+    QUEUE (full)        : [Task-3, Task-4, Task-5]
+    after submitting 6  : [Task-4, Task-5, Task-6]   <- Task-3 was dropped
+    after submitting 7  : [Task-5, Task-6, Task-7]   <- Task-4 was dropped
+    running vs queued   : poolSize=2  active=2  queued=3  completed=0  everScheduled=5
+
+This experiment deliberately makes tasks 1 and 2 run for 15 seconds while using DiscardOldestPolicy. Why go to that trouble instead of just using short tasks everywhere?",To make the demo run faster overall,"To PROVE that DiscardOldestPolicy leaves running tasks alone - by making tasks 1 and 2 impossible to miss if they got discarded (they'd stop printing), the experiment can show they survive untouched while queued tasks get dropped around them",Long tasks are required for ArrayBlockingQueue to work,"It has no particular purpose, it was arbitrary",,2,"Verified: the queue went [3,4,5] -> [4,5,6] -> [5,6,7] while tasks 1 and 2 kept running the whole time and both printed FINISHED at the end - clear proof the policy only ever touches the waiting list.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,                          // core = max = 2, on purpose
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.DiscardOldestPolicy());
+
+executor.execute(new LongRunningTask(1));   // sleeps 15 seconds
+executor.execute(new LongRunningTask(2));   // sleeps 15 seconds
+// tasks 1 and 2 are now RUNNING on the two workers
+
+executor.execute(new QueuedTask(3));
+executor.execute(new QueuedTask(4));
+executor.execute(new QueuedTask(5));
+Log.line(""QUEUE (full): "" + executor.getQueue());     // [Task-3, Task-4, Task-5]
+
+executor.execute(new QueuedTask(6));
+Log.line(""after 6: "" + executor.getQueue());           // [Task-4, Task-5, Task-6]
+
+executor.execute(new QueuedTask(7));
+Log.line(""after 7: "" + executor.getQueue());           // [Task-5, Task-6, Task-7]
+
+Actual output:
+
+    QUEUE (full)        : [Task-3, Task-4, Task-5]
+    after submitting 6  : [Task-4, Task-5, Task-6]   <- Task-3 was dropped
+    after submitting 7  : [Task-5, Task-6, Task-7]   <- Task-4 was dropped
+    running vs queued   : poolSize=2  active=2  queued=3  completed=0  everScheduled=5
+
+In that same experiment, after submitting tasks 6 and 7 under DiscardOldestPolicy, what does executor.getQueue() contain?","[Task-3, Task-4, Task-5] - unchanged","[Task-5, Task-6, Task-7] - the two oldest queued entries (3, then 4) were each discarded to make room as 6 and 7 arrived",[] - the queue is emptied by the policy,"[Task-6, Task-7] - only the two newest tasks remain, queue capacity effectively shrank",,2,Verified directly from the printed queue contents. Each new arrival against a full queue costs exactly the oldest queued entry its spot - a sliding window over the waiting list.,1
+"If you needed a policy that guarantees NO work is ever silently lost, but you also cannot allow the producer thread to be blocked doing someone else's work, which of the four policies (Abort, CallerRuns, Discard, DiscardOldest) fits, and why do the other three fail this requirement?",CallerRunsPolicy - it never loses work and never blocks,"AbortPolicy - it loses no work (the caller finds out and can retry/log/handle it), and it never runs the task on the caller's thread. CallerRuns avoids losing work but DOES occupy the caller; Discard and DiscardOldest both silently lose work","DiscardOldest, since only the oldest task is ever affected",None of the four policies satisfy both requirements,,2,"AbortPolicy is the only one that hands the decision back to the caller without making that decision FOR them (by running it, or silently dropping it) - the caller retains full control over what to do next.",2
+"Across all four rejection policies, which single fact stays exactly the same in every one of them?",The task is always eventually run somewhere,The condition that triggers the policy at all - pool at maximumPoolSize AND queue completely full - is identical across all four. Only the RESPONSE to that condition differs,The submitting thread is always blocked,An exception is always thrown,,2,It's easy to think of the policies as changing WHEN rejection happens. They don't - they only change WHAT HAPPENS once that one specific condition (already established in section 2) is met.,2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i, 2000));    // 2 run immediately, 3 queue
+}
+executor.shutdown();
+Log.line(""isShutdown="" + executor.isShutdown() + ""  isTerminated="" + executor.isTerminated());
+
+try {
+    executor.execute(new SleepTask(99, 500));
+} catch (RejectedExecutionException e) {
+    Log.line(""!!! task 99 REJECTED - no new work is accepted after shutdown()"");
+}
+
+executor.awaitTermination(30, TimeUnit.SECONDS);
+PoolState.print(""after termination"", executor);
+
+After executor.shutdown() is called, three tasks are still sitting in the queue from before. What happens to them?","They are discarded immediately, same as new submissions","They are left alone and allowed to run to completion normally - shutdown() only blocks NEW submissions, it does not touch work already accepted",They are moved to a new executor,They throw RejectedExecutionException retroactively,,1,"shutdown() is a polite close: 'stop letting new people in, but let everyone already inside finish their business.'",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i, 2000));    // 2 run immediately, 3 queue
+}
+executor.shutdown();
+Log.line(""isShutdown="" + executor.isShutdown() + ""  isTerminated="" + executor.isTerminated());
+
+try {
+    executor.execute(new SleepTask(99, 500));
+} catch (RejectedExecutionException e) {
+    Log.line(""!!! task 99 REJECTED - no new work is accepted after shutdown()"");
+}
+
+executor.awaitTermination(30, TimeUnit.SECONDS);
+PoolState.print(""after termination"", executor);
+
+A task is submitted via execute() immediately AFTER shutdown() has been called. What happens?",It is queued normally and runs eventually,"RejectedExecutionException is thrown - shutdown() closes the door to new work the instant it is called, regardless of how much capacity the pool still has",It silently does nothing,It runs on the calling thread automatically,,2,"Verified in the experiment: task 99, submitted right after shutdown(), was rejected even though the pool wasn't saturated at all - shutdown() itself is what blocked it, not capacity.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i, 2000));    // 2 run immediately, 3 queue
+}
+executor.shutdown();
+Log.line(""isShutdown="" + executor.isShutdown() + ""  isTerminated="" + executor.isTerminated());
+
+try {
+    executor.execute(new SleepTask(99, 500));
+} catch (RejectedExecutionException e) {
+    Log.line(""!!! task 99 REJECTED - no new work is accepted after shutdown()"");
+}
+
+executor.awaitTermination(30, TimeUnit.SECONDS);
+PoolState.print(""after termination"", executor);
+
+Immediately after calling shutdown(), what do isShutdown() and isTerminated() report, given that tasks are still running?",Both true immediately,isShutdown()=true right away (the pool has entered shutdown mode); isTerminated()=false until every task has actually finished and the workers have all stopped,Both false until awaitTermination() is called,"isShutdown()=false, isTerminated()=true",,2,isShutdown() answers 'has shutdown been requested?' - immediate. isTerminated() answers 'has everything actually finished?' - only true at the very end.,1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new InterruptibleTask(i));   // sleeps in 1-second slices, up to 10
+}
+
+Log.sleep(2500);
+List<Runnable> neverRan = executor.shutdownNow();
+Log.line(""shutdownNow() returned "" + neverRan.size() + "" task(s) that never ran: "" + neverRan);
+
+public class InterruptibleTask implements Runnable {
+    private static final int SLICES = 10;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        Log.line(""Task "" + taskId + "" STARTED"");
+        for (int i = 1; i <= SLICES; i++) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Log.line(""Task "" + taskId + "" was INTERRUPTED at slice "" + i + "" - choosing to stop"");
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        Log.line(""Task "" + taskId + "" FINISHED normally"");
+    }
+}
+
+shutdownNow() is called while 2 tasks are running and 3 are queued. What happens to the 3 queued ones specifically?","They continue running to completion, just like with shutdown()",They are removed from the queue and handed back to the caller as the return value of shutdownNow() - a List<Runnable> of everything that never got the chance to run,They are discarded with no way to recover them,They are converted into a single combined task,,1,"This is a real, useful difference from shutdown(): shutdownNow() literally gives back the leftover work so the caller can decide what to do with it (retry elsewhere, log it, drop it deliberately).",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new InterruptibleTask(i));   // sleeps in 1-second slices, up to 10
+}
+
+Log.sleep(2500);
+List<Runnable> neverRan = executor.shutdownNow();
+Log.line(""shutdownNow() returned "" + neverRan.size() + "" task(s) that never ran: "" + neverRan);
+
+public class InterruptibleTask implements Runnable {
+    private static final int SLICES = 10;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        Log.line(""Task "" + taskId + "" STARTED"");
+        for (int i = 1; i <= SLICES; i++) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Log.line(""Task "" + taskId + "" was INTERRUPTED at slice "" + i + "" - choosing to stop"");
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        Log.line(""Task "" + taskId + "" FINISHED normally"");
+    }
+}
+
+What happens to the 2 tasks that were ALREADY RUNNING when shutdownNow() was called?","They are killed immediately, mid-statement, with no chance to react","Their threads are interrupted - InterruptedException is thrown inside them if they're sleeping/waiting, or their interrupt flag is set if they're not - but it is entirely up to the task's own code whether it actually stops","They continue running to completion, unaffected",They are paused and resumed after shutdownNow() completes,,2,"shutdownNow() ASKS running tasks to stop, via interruption. It cannot force a thread to stop mid-execution - that capability was deliberately removed from Java (Thread.stop() is deprecated/dangerous) for exactly the reasons discussed with locks in earlier classes.",2
+"Real code:
+
+public class InterruptibleTask implements Runnable {
+    private static final int SLICES = 10;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        Log.line(""Task "" + taskId + "" STARTED"");
+        for (int i = 1; i <= SLICES; i++) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Log.line(""Task "" + taskId + "" was INTERRUPTED at slice "" + i + "" - choosing to stop"");
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        Log.line(""Task "" + taskId + "" FINISHED normally"");
+    }
+}
+
+This InterruptibleTask sleeps in 1-second SLICES inside a loop, rather than one big 10-second sleep. Why does that structure matter for shutdownNow() to have any visible effect?",It doesn't matter - the total duration is what counts,"Checking for interruption only happens where the code actually gives Java a chance to notice it - between slices, via the InterruptedException each Thread.sleep() call can throw. A single 10-second sleep would behave identically since sleep() itself is always interruptible - but a task doing pure CPU work with no sleep or check at all would never notice",Slicing makes the task run on multiple threads at once,It is required syntax for any Runnable,,2,"The real lesson is broader than this specific task: interruption is cooperative, and a task that never calls an interruptible method (sleep, wait, blocking I/O) or never checks Thread.currentThread().isInterrupted() itself will simply never respond to shutdownNow() at all.",2
+"Real code:
+
+// EXPERIMENT 16 - two identical executors, 5 tasks each, core=max=2
+
+// Executor A: a.shutdown();          a.awaitTermination(60, SECONDS);
+// Executor B: b.shutdownNow();       b.awaitTermination(60, SECONDS);
+
+Log.line(""A (shutdown)    completed="" + a.getCompletedTaskCount() + ""  returned=0"");
+Log.line(""B (shutdownNow) completed="" + b.getCompletedTaskCount()
+        + ""  returned="" + returned.size() + "" -> "" + returned);
+
+Executor A gets shutdown(), Executor B gets shutdownNow() - both running the identical 5-task workload. What do you expect for a.getCompletedTaskCount() vs b.getCompletedTaskCount()?","They will be equal, since both executors had the same tasks","A's completed count will be higher (likely all 5) since shutdown() lets everything finish; B's will likely be lower, since shutdownNow() interrupted whatever was still running and returned whatever was still queued, unfinished",B's will always be higher because shutdownNow() forces tasks to finish faster,Neither will report any completed tasks after being shut down,,2,"This head-to-head comparison, run on genuinely identical starting conditions, is the clearest possible demonstration of the practical difference between the two calls.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+Actual output:
+
+    shutdown() returned after 0 ms - it did not wait for anything
+    awaitTermination(2s) returned false after 2011 ms  (false = timed out)
+    still working    poolSize=2  active=2  queued=2  completed=0  everScheduled=4
+    awaitTermination(30s) returned true after 6020 ms  (true = finished)
+    final            poolSize=0  active=0  queued=0  completed=4  everScheduled=4
+
+executor.shutdown() is called, and the very next line prints how many milliseconds that call took. Given the verified output, is shutdown() a blocking call?","Yes, it waits for all tasks to finish before returning","No - verified output shows it returned after 0 ms, immediately, regardless of whether tasks were still running",It blocks only if the queue is non-empty,It blocks for exactly keepAliveTime,,1,"shutdown() only flips a flag and refuses future submissions. It does not, and was never designed to, wait around for anything.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+Actual output:
+
+    shutdown() returned after 0 ms - it did not wait for anything
+    awaitTermination(2s) returned false after 2011 ms  (false = timed out)
+    still working    poolSize=2  active=2  queued=2  completed=0  everScheduled=4
+    awaitTermination(30s) returned true after 6020 ms  (true = finished)
+    final            poolSize=0  active=0  queued=0  completed=4  everScheduled=4
+
+4 tasks of 3 seconds each, core=max=2 (so 2 rounds, ~6 seconds total). awaitTermination(2, SECONDS) is called right after shutdown(). What does it return, and why?","true, because shutdown() already started the process","false - verified, it returned after about 2011 ms with false, because the work genuinely needs about 6 seconds total and only 2 were given","true, because 2 seconds is enough time for at least one task to finish",It throws an exception since the pool isn't done yet,,1,"awaitTermination's boolean return is not optional information - false is a direct statement that the pool is NOT done, and code that ignores it and assumes completion would be wrong.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+Actual output:
+
+    shutdown() returned after 0 ms - it did not wait for anything
+    awaitTermination(2s) returned false after 2011 ms  (false = timed out)
+    still working    poolSize=2  active=2  queued=2  completed=0  everScheduled=4
+    awaitTermination(30s) returned true after 6020 ms  (true = finished)
+    final            poolSize=0  active=0  queued=0  completed=4  everScheduled=4
+
+A second call, awaitTermination(30, SECONDS), is then made. What does IT return, and what does that number tell you?","false again, since the first call already 'used up' the wait","true - verified, returned after about 6020 ms total, meaning by then every task had genuinely finished and the executor had fully terminated","true immediately, in 0 ms, since it was already 'told' to wait once",It cannot be called twice on the same executor,,1,awaitTermination can be called as many times as needed; each call independently waits up to its own timeout for the current state of things.,1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+Why does the demo call shutdown() and THEN awaitTermination(), rather than just calling awaitTermination() on its own?",awaitTermination() would throw an exception if shutdown() was never called first,"Because awaitTermination() only waits for termination - it does nothing to actually START the shutdown process or stop new submissions. Without shutdown() first, the pool would just keep accepting work forever and awaitTermination() would wait indefinitely","The order doesn't matter, they can be called in either sequence",shutdown() and awaitTermination() do the exact same thing,,2,"The two calls have genuinely different jobs: shutdown() initiates the close, awaitTermination() waits to confirm it finished. Neither one substitutes for the other.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i, 2000));    // 2 run immediately, 3 queue
+}
+executor.shutdown();
+Log.line(""isShutdown="" + executor.isShutdown() + ""  isTerminated="" + executor.isTerminated());
+
+try {
+    executor.execute(new SleepTask(99, 500));
+} catch (RejectedExecutionException e) {
+    Log.line(""!!! task 99 REJECTED - no new work is accepted after shutdown()"");
+}
+
+executor.awaitTermination(30, TimeUnit.SECONDS);
+PoolState.print(""after termination"", executor);
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+Code calls shutdown() and then immediately reads executor.getCompletedTaskCount() to log a final report, with no awaitTermination() in between. What is wrong with this?",Nothing - shutdown() guarantees all tasks are done by the time it returns,"The count read is very likely incomplete, since shutdown() returns instantly while tasks may still be running - the 'final' report would be captured mid-flight rather than after everything actually finished",getCompletedTaskCount() cannot be called after shutdown(),This will throw an IllegalStateException,,2,The exact bug this pairing exists to prevent. Any code that wants a genuinely final number needs to wait for termination first - either via awaitTermination() or by polling isTerminated().,2
+"Summarise the three calls in one line each: shutdown(), shutdownNow(), awaitTermination().",shutdown = stop everything now; shutdownNow = stop politely; awaitTermination = start the shutdown,"shutdown = stop accepting new work, finish what's already accepted; shutdownNow = stop accepting new work, interrupt what's running, hand back what was queued; awaitTermination = block the calling thread until the pool is fully done or a timeout expires",All three do the same thing with different syntax,shutdown = pause; shutdownNow = resume; awaitTermination = restart,,2,"Three genuinely distinct jobs: one closes politely, one closes forcefully, one waits to confirm either kind of close has actually finished.",1
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new InterruptibleTask(i));   // sleeps in 1-second slices, up to 10
+}
+
+Log.sleep(2500);
+List<Runnable> neverRan = executor.shutdownNow();
+Log.line(""shutdownNow() returned "" + neverRan.size() + "" task(s) that never ran: "" + neverRan);
+
+Can shutdownNow() be called on a pool that has already had plain shutdown() called on it earlier?","No, once shutdown() is called the executor is locked into that mode forever","Yes - it's a legitimate escalation. If you initiated a polite shutdown() but then decide you can't wait any longer for the remaining work, calling shutdownNow() afterward will interrupt whatever is still running and return whatever is still queued","Yes, but it silently does nothing the second time","No, this throws IllegalStateException",,2,"A realistic pattern: shutdown(), then awaitTermination() with a timeout, and if that returns false, escalate to shutdownNow() as a last resort.",2
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+Actual output:
+
+    execute() returned void - there is no way to ask about task 1 later
+    Task 1 STARTED
+    Task 1 FINISHED
+    submit() returned a Future. isDone() right now = false
+    Task 2 STARTED
+    Task 2 FINISHED
+    future.get() returned null  (null - a Runnable produces no value)
+    isDone() after get() = true   isCancelled() = false
+
+What does executor.execute(new SleepTask(1)) return, and what does executor.submit(new SleepTask(2)) return?",Both return void - neither gives you anything back,execute() returns void (nothing); submit() returns a Future<?> that represents the eventual outcome of that specific task,Both return a Future<?>,execute() returns a Thread object; submit() returns void,,1,"This single difference in return type is the entire reason submit() exists - it's what lets you track, wait for, or cancel a specific piece of work later.",1
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+Actual output:
+
+    execute() returned void - there is no way to ask about task 1 later
+    Task 1 STARTED
+    Task 1 FINISHED
+    submit() returned a Future. isDone() right now = false
+    Task 2 STARTED
+    Task 2 FINISHED
+    future.get() returned null  (null - a Runnable produces no value)
+    isDone() after get() = true   isCancelled() = false
+
+Right after calling submit(), before the task has finished, what does future.isDone() report - and right after future.get() returns, what does it report?",false both times,true both times,"false before the task finishes, true afterward - isDone() reflects the task's actual completion state at the moment you ask",It always throws until get() has been called once,,1,"Verified: isDone() printed false immediately after submit(), then true after get() returned - a live readout of whether the work is actually finished yet.",1
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+Actual output:
+
+    execute() returned void - there is no way to ask about task 1 later
+    Task 1 STARTED
+    Task 1 FINISHED
+    submit() returned a Future. isDone() right now = false
+    Task 2 STARTED
+    Task 2 FINISHED
+    future.get() returned null  (null - a Runnable produces no value)
+    isDone() after get() = true   isCancelled() = false
+
+future.get() is called on a Future from submitting a Runnable (not a Callable). What value does it return?",The thread name that ran the task,"null - a plain Runnable produces no result, so its Future has nothing meaningful to hand back other than confirming completion",The number of milliseconds the task took,"It throws an exception, since Runnables cannot be submitted",,1,"Verified: future.get() printed 'returned null'. If you need an actual computed VALUE back, you submit a Callable instead of a Runnable - not used in these experiments, but this is exactly the gap it fills.",1
+"Real code:
+
+long start = System.currentTimeMillis();
+
+Future<?> future = executor.submit(new SleepTask(1));   // sleeps 4 seconds
+Log.line(""submitted, and main is free at "" + (System.currentTimeMillis() - start) + "" ms"");
+
+Log.line(""calling get() now - main will go quiet until the task is done"");
+future.get();
+Log.line(""get() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+A 4-second task is submitted via submit(). The very next line calls future.get(). What does 'main' do during those 4 seconds?",main continues immediately to whatever code comes after get(),"main is blocked, doing nothing, parked inside the get() call, until the worker thread finishes the task",main runs the task itself in parallel with the worker,main throws a TimeoutException after a default 1 second,,2,"get() with no arguments waits indefinitely. The task genuinely does run on a separate worker thread - but by calling get() immediately, main has chosen to give up the concurrency benefit and wait anyway.",1
+"Real code:
+
+long start = System.currentTimeMillis();
+
+Future<?> future = executor.submit(new SleepTask(1));   // sleeps 4 seconds
+Log.line(""submitted, and main is free at "" + (System.currentTimeMillis() - start) + "" ms"");
+
+Log.line(""calling get() now - main will go quiet until the task is done"");
+future.get();
+Log.line(""get() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+Given the previous question, what was actually accomplished by using a thread pool at all, if main just blocks on get() right away regardless?",Nothing - this pattern gets no benefit over just calling run() directly on main,"Little to nothing for THIS single task in isolation - the benefit of submit()+immediate get() shows up when you submit SEVERAL tasks first and only call get() on all of them afterward, letting them run concurrently before you collect results",The task still runs twice as fast due to the pool,It guarantees the task cannot throw an exception,,2,"A fair, important critique of the pattern shown in isolation - it sets up exactly why experiment 21's 'submit several first, THEN get() them all' style (submitting everything before collecting anything) is the version that actually pays off.",2
+"Real code:
+
+Future<?> withInterrupt = executor.submit(new CancellableTask(1));   // 8 slices, 1s each
+Log.sleep(2500);
+boolean c1 = withInterrupt.cancel(true);
+Log.line(""cancel(true) returned "" + c1 + ""   isCancelled="" + withInterrupt.isCancelled());
+
+Future<?> withoutInterrupt = executor.submit(new CancellableTask(2));
+Log.sleep(2500);
+boolean c2 = withoutInterrupt.cancel(false);
+Log.line(""cancel(false) returned "" + c2 + ""  isCancelled="" + withoutInterrupt.isCancelled());
+
+public class CancellableTask implements Runnable {
+    private static final int SLICES = 8;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        for (int i = 1; i <= SLICES; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                Log.line(""Task "" + taskId + "" noticed the interrupt flag at slice "" + i);
+                return;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            Log.line(""Task "" + taskId + "" finished slice "" + i);
+        }
+        Log.line(""Task "" + taskId + "" RAN ALL THE WAY TO THE END"");
+    }
+}
+
+A task is running (already past its first few slices) when future.cancel(true) is called on it. What actually happens?","The thread running it is destroyed immediately, mid-statement","The thread running the task is interrupted - InterruptedException fires if it's sleeping/waiting at that moment, or its interrupt flag becomes set otherwise - and it is up to the task's own code to notice and stop",Nothing happens until the task's next scheduled run,"The task is queued for cancellation and stops after its current slice finishes automatically, with no code changes needed",,2,"cancel(true) is a REQUEST delivered via interruption, structurally identical to what shutdownNow() does to running tasks - it is not a forced kill.",1
+"Real code:
+
+Future<?> withInterrupt = executor.submit(new CancellableTask(1));   // 8 slices, 1s each
+Log.sleep(2500);
+boolean c1 = withInterrupt.cancel(true);
+Log.line(""cancel(true) returned "" + c1 + ""   isCancelled="" + withInterrupt.isCancelled());
+
+Future<?> withoutInterrupt = executor.submit(new CancellableTask(2));
+Log.sleep(2500);
+boolean c2 = withoutInterrupt.cancel(false);
+Log.line(""cancel(false) returned "" + c2 + ""  isCancelled="" + withoutInterrupt.isCancelled());
+
+public class CancellableTask implements Runnable {
+    private static final int SLICES = 8;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        for (int i = 1; i <= SLICES; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                Log.line(""Task "" + taskId + "" noticed the interrupt flag at slice "" + i);
+                return;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            Log.line(""Task "" + taskId + "" finished slice "" + i);
+        }
+        Log.line(""Task "" + taskId + "" RAN ALL THE WAY TO THE END"");
+    }
+}
+
+future.cancel(false) is called instead, on a task that is currently running. What happens to that running task?",It is interrupted exactly like cancel(true),"Nothing happens to it at all - it is NOT interrupted and continues running completely normally to the end, even though the Future now reports isCancelled() = true",It pauses until cancel(true) is also called,It throws CancellationException from inside run(),,2,"This is the trap in the method name: cancel(false) does not mean 'cancel gently' - for an already-running task, it effectively means 'don't actually try to stop it, just mark the Future as cancelled.'",2
+"Real code:
+
+public class CancellableTask implements Runnable {
+    private static final int SLICES = 8;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        for (int i = 1; i <= SLICES; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                Log.line(""Task "" + taskId + "" noticed the interrupt flag at slice "" + i);
+                return;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            Log.line(""Task "" + taskId + "" finished slice "" + i);
+        }
+        Log.line(""Task "" + taskId + "" RAN ALL THE WAY TO THE END"");
+    }
+}
+
+isCancelled() returns true after calling cancel(false) on a running task, yet the task's run() method keeps executing and printing progress. Is this a contradiction?","Yes, this is a bug in the Future implementation","No - isCancelled() only reports whether cancellation was REQUESTED on the Future, not whether the underlying work actually stopped. Those are two different facts that can legitimately disagree","Yes, isCancelled() should always match the task's real state","No, because the task will stop on its next line automatically",,2,The same lesson as isTerminated() vs isShutdown() in section 6: a boolean flag about intent is not the same thing as a boolean flag about actual outcome. Always check what a method actually promises to report.,2
+"Real code:
+
+public class CancellableTask implements Runnable {
+    private static final int SLICES = 8;
+    private final int taskId;
+
+    @Override
+    public void run() {
+        for (int i = 1; i <= SLICES; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                Log.line(""Task "" + taskId + "" noticed the interrupt flag at slice "" + i);
+                return;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            Log.line(""Task "" + taskId + "" finished slice "" + i);
+        }
+        Log.line(""Task "" + taskId + "" RAN ALL THE WAY TO THE END"");
+    }
+}
+
+For cancel(true) to have ANY visible effect on this particular task, what does the task's own code have to be doing?",Nothing special - all tasks respond to interruption automatically,"It must either be blocked in an interruptible call (like Thread.sleep here) so InterruptedException fires, OR it must periodically check Thread.currentThread().isInterrupted() itself, as this task's loop does at the top of each slice","It must be submitted via execute(), not submit()",It must throw a checked exception somewhere in run(),,2,"If this task instead did one uninterrupted 8-second CPU computation with neither a sleep nor a manual interruption check anywhere inside it, cancel(true) would set the interrupt flag but the task would run to completion regardless, oblivious to it.",2
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+You need to submit a task and later find out whether it completed successfully or threw an exception. Which method should you use, execute() or submit(), and what do you have to remember to do afterward?",execute() - and check the console for stack traces,"submit() - and you must actually call get() (or otherwise inspect the returned Future) later, since submit() silently swallows exceptions into the Future rather than printing them anywhere by default",execute() - it always throws exceptions back to the caller directly,Either works identically for this purpose,,2,"This sets up exactly the trap explored further in experiment 28 of the original brief: submit() without ever checking the Future means a failing task can fail silently, forever, with zero visible trace.",2
+A Future's get() method is declared to throw both InterruptedException and ExecutionException. What real-world situation does EACH of those two correspond to?,Both mean the same thing: the task failed,"InterruptedException means the CALLING thread (the one that called get()) was itself interrupted while waiting. ExecutionException means the TASK being waited for threw an exception during its own execution, and that exception is wrapped inside as the cause",InterruptedException means the task was cancelled; ExecutionException means the pool shut down,Neither can actually occur when calling get() with no timeout argument,,2,"Two completely different failures living in the same method signature: one is about YOU (the waiter) being interrupted, the other is about the WORK ITSELF having gone wrong.",2
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+Why might a codebase deliberately choose execute() over submit() for a particular task, given submit() offers strictly more capability (a Future)?","submit() is always slower, so execute() is preferred for performance-critical code","If nobody needs to track, wait for, or cancel that specific task, execute() communicates that intent more simply - and avoids creating a Future object that will never be inspected, which is a small but real bit of unnecessary bookkeeping",execute() is required for any Runnable that doesn't implement Callable,There is no legitimate reason - submit() should always be preferred,,2,"Not every piece of code needs every capability. Choosing the simpler method when you genuinely don't need the extra one is a reasonable, deliberate choice, not a missed opportunity.",2
+"Real code:
+
+long start = System.currentTimeMillis();
+
+Future<?> future = executor.submit(new SleepTask(1));   // sleeps 4 seconds
+Log.line(""submitted, and main is free at "" + (System.currentTimeMillis() - start) + "" ms"");
+
+Log.line(""calling get() now - main will go quiet until the task is done"");
+future.get();
+Log.line(""get() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+Future<?> withInterrupt = executor.submit(new CancellableTask(1));   // 8 slices, 1s each
+Log.sleep(2500);
+boolean c1 = withInterrupt.cancel(true);
+Log.line(""cancel(true) returned "" + c1 + ""   isCancelled="" + withInterrupt.isCancelled());
+
+Future<?> withoutInterrupt = executor.submit(new CancellableTask(2));
+Log.sleep(2500);
+boolean c2 = withoutInterrupt.cancel(false);
+Log.line(""cancel(false) returned "" + c2 + ""  isCancelled="" + withoutInterrupt.isCancelled());
+
+Both future.get() and future.cancel(true) interact with an already-submitted task, but they do fundamentally different things. State the difference in one sentence.","They are the same operation, named differently for convenience","get() waits for the task to finish and hands you its result; cancel() attempts to stop the task from finishing at all, by interrupting it if it's already running",get() stops the task; cancel() waits for it,get() only works on Callables; cancel() only works on Runnables,,2,"One is 'let it finish, I'll wait' and the other is 'please don't finish' - genuinely opposite intentions toward the same piece of submitted work.",1
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+long start = System.currentTimeMillis();
+
+Future<?> future = executor.submit(new SleepTask(1));   // sleeps 4 seconds
+Log.line(""submitted, and main is free at "" + (System.currentTimeMillis() - start) + "" ms"");
+
+Log.line(""calling get() now - main will go quiet until the task is done"");
+future.get();
+Log.line(""get() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+If you call submit() but never call get(), isCancelled(), isDone(), or cancel() on the returned Future at all - just discard the reference - does the task still run?","No, a Future must be interacted with for the task to actually execute","Yes - the task was already handed to the pool the moment submit() was called; the Future is only a handle for OBSERVING or CONTROLLING it afterward, not a trigger for whether it runs at all","Yes, but only if execute() is also called on the same task","No, the task is queued but paused until get() is called",,2,submit() and execute() both hand the task to the pool identically - submit() simply also gives you back a receipt. Losing the receipt doesn't cancel the order.,2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.AbortPolicy());
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));    // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED -> "" + e.getClass().getSimpleName());
+    }
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+core=2, max=6, ArrayBlockingQueue(4), AbortPolicy, keepAliveTime=5s. Fifteen tasks of 3 seconds each are submitted in a tight loop with no delay. Walk through: how many are accepted immediately without waiting, how many queue, how many get extra workers, and how many are rejected?","All 15 accepted, 0 rejected","2 go straight to core workers, 4 fill the queue, 4 more force extra workers (bringing poolSize to 6), and the remaining 5 (tasks 11-15) are rejected - total accepted capacity is 6 + 4 = 10","6 accepted, 9 queued, 0 rejected","10 accepted, 5 queued, 0 rejected",,2,"Same ordering rule applied end to end: 2 (core) + 4 (queue) + 4 (extra workers to reach max of 6) = 10 accommodated, everything past that (tasks 11-15) rejected since pool is at max and queue is full.",3
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,          // keepAliveTime
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 2 seconds
+}
+PoolState.print(""right after the burst"", executor);
+// ... nothing else submitted for the next 12+ seconds ...
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5,
+        5, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+executor.allowCoreThreadTimeOut(true);
+
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // each sleeps 1 second
+}
+// ... nothing else submitted afterwards ...
+
+core=3, max=3, allowCoreThreadTimeOut(true), keepAliveTime=4 seconds. A burst of work runs and finishes. What is poolSize after 10 idle seconds, and does having max equal to core change this answer at all compared to when they differ?","poolSize stays at 3 forever, since core==max means no thread can ever time out","poolSize falls to 0 - allowCoreThreadTimeOut applies to ALL workers when enabled, regardless of whether core equals max; the core==max relationship affects how HIGH the pool can grow, not whether idle workers can time out","poolSize falls to 3, matching corePoolSize as a floor",This configuration is illegal since core cannot equal max with core timeout enabled,,2,Two independent knobs: corePoolSize vs maximumPoolSize controls the GROWTH ceiling; allowCoreThreadTimeOut controls the SHRINK floor. Setting core==max only affects the first one.,3
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>(3));    // capacity 3 = bounded, same class as experiment 8
+
+for (int i = 1; i <= 9; i++) {
+    try {
+        executor.execute(new SleepTask(i));       // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,                          // core = max = 2, on purpose
+        new ArrayBlockingQueue<Runnable>(3),
+        new ThreadPoolExecutor.DiscardOldestPolicy());
+
+executor.execute(new LongRunningTask(1));   // sleeps 15 seconds
+executor.execute(new LongRunningTask(2));   // sleeps 15 seconds
+// tasks 1 and 2 are now RUNNING on the two workers
+
+executor.execute(new QueuedTask(3));
+executor.execute(new QueuedTask(4));
+executor.execute(new QueuedTask(5));
+Log.line(""QUEUE (full): "" + executor.getQueue());     // [Task-3, Task-4, Task-5]
+
+executor.execute(new QueuedTask(6));
+Log.line(""after 6: "" + executor.getQueue());           // [Task-4, Task-5, Task-6]
+
+executor.execute(new QueuedTask(7));
+Log.line(""after 7: "" + executor.getQueue());           // [Task-5, Task-6, Task-7]
+
+core=2, max=4, LinkedBlockingQueue(2), DiscardOldestPolicy. Tasks 1-2 run long (15s). Tasks 3,4 fill the queue. Tasks 5,6 force 2 extra workers (poolSize now 4). Task 7 arrives. What happens to it, and to the queue?","Task 7 is rejected, since poolSize is at maximumPoolSize and the queue is full","Nothing is rejected - DiscardOldestPolicy fires instead: the oldest queued task (Task-3) is dropped, and Task 7 is resubmitted, filling the now-empty slot","Task 7 gets a 5th worker, exceeding maximumPoolSize",Task 7 replaces one of the two 15-second running tasks,,2,"This is the exact rejection-trigger condition from section 2 (pool at max AND queue full) - the only difference DiscardOldestPolicy makes is that instead of throwing, it clears space and lets the new task in.",3
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<Runnable>());     // NO capacity given -> unbounded
+
+for (int i = 1; i <= 20; i++) {
+    executor.execute(new SleepTask(i));           // each sleeps 2 seconds
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new SynchronousQueue<Runnable>());
+
+for (int i = 1; i <= 7; i++) {
+    try {
+        executor.execute(new SleepTask(i));     // each sleeps 5 seconds
+        PoolState.print(""accepted task "" + i, executor);
+    } catch (RejectedExecutionException e) {
+        Log.line(""!!! Task "" + i + "" REJECTED"");
+    }
+}
+
+Two pools, both core=2/max=8: Pool X uses an unbounded LinkedBlockingQueue, Pool Y uses a SynchronousQueue. Under a sustained flood of tasks arriving faster than they can be processed, which pool's poolSize reaches 8 first, and which one starts rejecting tasks?",Pool X reaches 8 first; Pool Y never rejects,"Pool Y reaches 8 almost immediately (SynchronousQueue forces growth on nearly every submission past the core) and Y will be the one rejecting tasks once poolSize hits 8 and the flood continues; Pool X's poolSize will still be sitting at 2, with tasks piling up in its queue instead, never rejecting anything",Both behave identically since both allow max=8,Pool X rejects immediately; Pool Y never grows past 2,,2,"The two extremes of queue behaviour, side by side under identical pressure: one queue absorbs everything and never triggers growth or rejection; the other queue absorbs nothing and triggers both almost instantly.",3
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+for (int i = 1; i <= 5; i++) {
+    executor.execute(new SleepTask(i, 2000));    // 2 run immediately, 3 queue
+}
+executor.shutdown();
+Log.line(""isShutdown="" + executor.isShutdown() + ""  isTerminated="" + executor.isTerminated());
+
+try {
+    executor.execute(new SleepTask(99, 500));
+} catch (RejectedExecutionException e) {
+    Log.line(""!!! task 99 REJECTED - no new work is accepted after shutdown()"");
+}
+
+executor.awaitTermination(30, TimeUnit.SECONDS);
+PoolState.print(""after termination"", executor);
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 2, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(10));
+
+long start = System.currentTimeMillis();
+for (int i = 1; i <= 4; i++) {
+    executor.execute(new SleepTask(i));   // 4 tasks of 3 seconds, core=max=2 -> 2 rounds
+}
+
+executor.shutdown();
+Log.line(""shutdown() returned after "" + (System.currentTimeMillis() - start) + "" ms"");
+
+boolean firstTry = executor.awaitTermination(2, TimeUnit.SECONDS);
+Log.line(""awaitTermination(2s) returned "" + firstTry);
+
+boolean secondTry = executor.awaitTermination(30, TimeUnit.SECONDS);
+Log.line(""awaitTermination(30s) returned "" + secondTry);
+
+Code does the following: submits 10 tasks, calls shutdown(), then IMMEDIATELY (no awaitTermination) reads executor.getQueue().size() and reports it as 'tasks remaining'. Explain everything wrong with this, using what sections 2 and 6 established.",Nothing is wrong - this correctly reports the remaining work,"getQueue().size() only counts QUEUED tasks, not ones currently RUNNING - so it understates remaining work by however many are active. And since shutdown() returns instantly, this whole check happens before most of the work is even attempted, making the number essentially meaningless as a 'remaining work' figure","This will throw an exception, since getQueue() cannot be called after shutdown()",The only problem is that shutdown() should have been shutdownNow() instead,,2,Combines the poolSize/active/queued distinction from section 2 with the shutdown()-does-not-block fact from section 6 - exactly the kind of two-concept combination a real code review would need to catch.,3
+"Real code:
+
+executor.execute(new SleepTask(1));
+Log.line(""execute() returned void - there is no way to ask about task 1 later"");
+
+Future<?> future = executor.submit(new SleepTask(2));
+Log.line(""submit() returned a Future. isDone() right now = "" + future.isDone());
+
+Object result = future.get();
+Log.line(""future.get() returned "" + result);
+Log.line(""isDone() after get() = "" + future.isDone() + ""   isCancelled() = "" + future.isCancelled());
+
+Future<?> withInterrupt = executor.submit(new CancellableTask(1));   // 8 slices, 1s each
+Log.sleep(2500);
+boolean c1 = withInterrupt.cancel(true);
+Log.line(""cancel(true) returned "" + c1 + ""   isCancelled="" + withInterrupt.isCancelled());
+
+Future<?> withoutInterrupt = executor.submit(new CancellableTask(2));
+Log.sleep(2500);
+boolean c2 = withoutInterrupt.cancel(false);
+Log.line(""cancel(false) returned "" + c2 + ""  isCancelled="" + withoutInterrupt.isCancelled());
+
+A task is submitted with submit() and its Future is cancelled with cancel(true) one second later, while the task is sleeping inside Thread.sleep(5000). Trace exactly what happens, in order.","The task finishes its full 5-second sleep regardless, then get() would return null","Thread.sleep() throws InterruptedException inside the task at roughly the 1-second mark; if the task's code catches that and returns (as these experiments' tasks do), the task ends early; the Future's isCancelled() reports true; calling get() on it now throws CancellationException rather than returning a result","cancel(true) has no effect on tasks that are sleeping, only ones doing CPU work",The worker thread that was running the task is destroyed and removed from the pool permanently,,3,"Ties together interruption mechanics from section 7 with the cooperative-cancellation theme threaded through the whole quiz: cancel(true) interrupts, the task's own code decides what happens next, and a genuinely cancelled Future changes what get() does afterward.",3
+"A single ThreadPoolExecutor is configured with corePoolSize=4, maximumPoolSize=4, and an unbounded queue - a common shape for a general-purpose background pool. Someone asks: 'why bother setting maximumPoolSize at all here, since it equals corePoolSize anyway?' What is the honest answer?",It shouldn't be set - maximumPoolSize is only meaningful when it differs from corePoolSize,"Technically true that it can never be reached given an unbounded queue (nothing can ever force the extra-worker step to fire) - but the constructor requires SOME value for maximumPoolSize regardless, so setting it equal to corePoolSize is really just documenting 'this pool will never grow beyond its fixed size', which is honest and intentional here given the unbounded queue already guarantees that","maximumPoolSize is ignored entirely whenever a queue is unbounded, so the value is irrelevant either way",This configuration will fail to compile since both values must differ,,2,"The most conceptually complete question in the set: it requires knowing both that maximumPoolSize is a required constructor argument regardless of whether it's reachable, AND that an unbounded queue makes it unreachable - the exact combination of facts from sections 1 and 4.",3
+"Looking back across every experiment: name the ONE piece of configuration that, more than corePoolSize, more than maximumPoolSize, and more than the rejection policy, decides whether a ThreadPoolExecutor will ever actually create an extra worker thread under load.",The rejection policy chosen,"The QUEUE - specifically whether it is bounded or effectively unbounded. A bounded or zero-capacity queue (ArrayBlockingQueue, bounded LinkedBlockingQueue, SynchronousQueue) forces growth once full; an unbounded queue (default LinkedBlockingQueue) means maximumPoolSize is never consulted at all",keepAliveTime,Whether execute() or submit() was used,,2,"If this quiz has one single takeaway to leave with, this is it: maximumPoolSize is a ceiling that only matters if something forces the pool to reach for it, and that 'something' is entirely a property of the queue you chose, not of maximumPoolSize itself.",2
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+core=2, max=5, ArrayBlockingQueue(3). If corePoolSize were changed to 0 with everything else identical, how would the FIRST two tasks be handled differently?",Identically - the first two tasks always get workers immediately either way,"With corePoolSize=0, there is no 'core' tier to fill first, so even the very first task's fate depends on the queue/extra-worker logic rather than an automatic core worker - though in practice the executor still creates a worker for it since poolSize (0) is below maximumPoolSize and the queue would rather hand off than store idle capacity",The first two tasks would be rejected immediately,corePoolSize cannot legally be set to 0,,2,"corePoolSize=0 is legal and occasionally useful (see the earlier question on pools that fully empty when idle) - it just means there's no guaranteed minimum thread count, not that tasks can't be served.",3
+"Real code:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2,                     // corePoolSize
+        5,                     // maximumPoolSize
+        60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+PoolState.print(""before any submit"", executor);
+for (int i = 1; i <= 2; i++) {
+    executor.execute(new SleepTask(i));
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+        2, 5, 60, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<Runnable>(3));
+
+for (int i = 1; i <= 8; i++) {
+    executor.execute(new SleepTask(i));   // each SleepTask sleeps 4 seconds
+    PoolState.print(""after submitting task "" + i, executor);
+}
+
+Two separate pools are both core=2/max=5/ArrayBlockingQueue(3). Pool A receives its 2 tasks all at once. Pool B receives its 2 tasks one at a time, with a 10-second gap between them, each task taking only 1 second. Does poolSize end up different between A and B?","Yes, Pool A will have a higher poolSize than Pool B","Not necessarily higher, but Pool B may well end up with only 1 worker total rather than 2, since its first task can fully finish and free its worker before the second task even arrives - meaning the pool might reuse that same one worker instead of creating a second one",Both always end up with exactly 2 workers regardless of timing,Pool B will always reject its second task,,2,"Worker creation responds to DEMAND overlapping in time, not merely to 'how many tasks have been submitted in total' - spacing tasks out can mean fewer workers get created than submitting them in a burst would.",3
+"In one sentence each, state what changes and what stays the same about ThreadPoolExecutor's core ordering rule (core -> queue -> extra workers -> reject) regardless of which BlockingQueue implementation is plugged in.",The ordering rule itself changes completely depending on the queue class used,"The ordering rule NEVER changes - it is always core, then queue, then extra workers, then reject. What changes between queue implementations is only WHETHER and WHEN step 2 (the queue) actually succeeds or refuses a task, which in turn changes how often steps 3 and 4 get reached",Only SynchronousQueue follows this rule; all other queues skip straight to rejection,The rule applies only to ArrayBlockingQueue,,2,"The single most important idea to leave this quiz with, stated directly: one fixed algorithm, four queue implementations that each answer step 2 differently, and that single difference is what produces every distinct behaviour seen across sections 4 through 8.",2

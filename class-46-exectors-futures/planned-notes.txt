@@ -1,0 +1,37 @@
+Thread
+  ↓
+Executor
+  ↓
+ExecutorService
+  ↓
+ThreadPoolExecutor
+  ↓
+Executors factory methods
+  ├── newFixedThreadPool()
+  ├── newCachedThreadPool()
+  ├── newSingleThreadExecutor()
+  └── newScheduledThreadPool()
+          ↓
+       execute()
+          ↓
+       submit()
+          ↓
+       Future
+          ↓
+       Callable
+          ↓
+       Future<T>
+          ↓
+   limitation of Future
+          ↓
+   CompletableFuture
+          ↓
+   supplyAsync / runAsync
+          ↓
+   thenApply / thenAccept / thenRun
+          ↓
+   thenCompose / thenCombine
+          ↓
+   exceptionally / handle
+          ↓
+   allOf / anyOf
