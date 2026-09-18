@@ -7,7 +7,8 @@ Roughly five blocks:
 - **Classes 10–13** — SOLID principles
 - **Classes 14–25** — design patterns, one or two per class
 - **Classes 26–37** — three full design projects: parking lot, vending machine, snake game
-- **Classes 38 onwards** — threads and concurrency
+- **Classes 38–46** — threads and concurrency
+- **Class 47 onwards** — building APIs with Spring Boot
 
 ---
 
@@ -238,3 +239,21 @@ Roughly five blocks:
 - The waiting check is a `while`, not an `if`, so a woken thread checks again instead of assuming things changed
 - The consumer is deliberately started first, so the first thing it does is wait
 - Also a PDF on thread communication and thread pools; `class-plan.txt` lists executor service as the next topic, not coded yet
+
+## class-45-Threadpool
+- Twenty numbered experiments exploring `ThreadPoolExecutor` one knob at a time
+- Core vs max pool size, the work queue filling up, and what happens once it does
+- The four rejection policies (abort, caller-runs, discard, discard-oldest) each get their own experiment
+- Later experiments cover cancelling a running or queued task, and interrupting a task that is sleeping vs one that is not
+- `plan.txt` sets the next steps: a flow chart, a comparison of the executor classes, and futures / completable futures examples — the seed for class-46
+
+## class-46-exectors-futures
+- Two small projects picking up straight from class-45's plan
+- **Executors-futures**: a fixed thread pool takes a `Runnable` (`MyTask`, fire-and-forget) and a `Callable` (`MyCalculation`, returns a value); `Future.get()` blocks the caller until that value is ready
+- **completableFutures**: the same idea without blocking — `supplyAsync` fetches a number, `thenApply` doubles it, `thenAccept` prints it, each stage handed off as its own `Supplier` / `Function` / `Consumer` class
+- Sets up the shift from "wait for the result" (`Future`) to "react when the result arrives" (`CompletableFuture`)
+
+## class-47-api
+- First look outside plain Java: building a REST API with Spring Boot
+- `api-demo/` generated from Spring Initializr (see `spring-initializer-website.png`), with one `@RestController` exposing a `/test` endpoint
+- `api.pdf` has the accompanying API/Spring Boot reference material
