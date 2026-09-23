@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movie Ticketing Notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">🎬 movie-ticket-booking / notes</span>
+  <a href="index.html">Overview</a>
+  <a href="domain-model.html">Domain Model</a>
+  <a href="seat-state.html">Seat State</a>
+  <a href="concurrency-locking.html" class="active">Concurrency &amp; Locking</a>
+  <a href="booking-flow.html">Booking Flow</a>
+  <a href="api-design.html">API Design</a>
+</nav>
+
+<div class="page">
+
+  <header class="titleblock">
+    <p class="eyebrow">Phases 6–7 — Concurrency</p>
+    <h1>Concurrency &amp; Locking</h1>
+    <p class="sub">The one guarantee the whole project exists to prove: 100 threads try to book the same seat for the same show, and exactly one succeeds. That guarantee comes from three structures that must stay separate, plus a lock taken per seat — never one lock for the whole system.</p>
+  </header>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 03</span><h2>Three structures that must never merge</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 940 300" role="img" aria-label="Screen holds a List of Seat, the physical layout. Show holds a Map from SeatId to ShowSeat, the per-show status. SeatLockManager holds a ConcurrentHashMap from ShowSeatKey to Lock, for concurrency control only. These three are deliberately kept separate.">
+          <rect class="node-box" x="20" y="40" width="280" height="150"/>
+          <text class="node-title" x="34" y="64">Screen</text>
+          <line class="node-rule" x1="20" y1="72" x2="300" y2="72"/>
+          <text class="node-member" x="34" y="90">List&lt;Seat&gt; seats</text>
+          <text class="node-member" x="34" y="118">physical layout —</text>
+          <text class="node-member" x="34" y="132">same for every show,</text>
+          <text class="node-member" x="34" y="146">never changes per booking</text>
+
+          <rect class="node-box node-box-accent" x="330" y="40" width="280" height="150"/>
+          <text class="node-title" x="344" y="64">Show</text>
+          <line class="node-rule" x1="330" y1="72" x2="610" y2="72" stroke="var(--accent)"/>
+          <text class="node-member-accent" x="344" y="90">Map&lt;SeatId, ShowSeat&gt;</text>
+          <text class="node-member" x="344" y="118">per-show status —</text>
+          <text class="node-member" x="344" y="132">a brand new map for</text>
+          <text class="node-member" x="344" y="146">every new Show</text>
+
+          <rect class="node-box" x="640" y="40" width="280" height="150"/>
+          <text class="node-stereo" x="654" y="58">«concurrency only»</text>
+          <text class="node-title" x="654" y="76">SeatLockManager</text>
+          <line class="node-rule" x1="640" y1="84" x2="920" y2="84"/>
+          <text class="node-member" x="654" y="100">ConcurrentHashMap&lt;</text>
+          <text class="node-member" x="654" y="114">ShowSeatKey, Lock&gt;</text>
+          <text class="node-member" x="654" y="140">key e.g. "SHOW_101_SEAT_10"</text>
+          <text class="node-member" x="654" y="160">a lock registry — not a</text>
+          <text class="node-member" x="654" y="174">data store</text>
+
+          <text class="node-member-bad" x="303" y="120" font-size="20" font-weight="700">✕</text>
+          <text class="node-member-bad" x="613" y="120" font-size="20" font-weight="700">✕</text>
+        </svg>
+        <figcaption>Every field of a <code>ShowSeat</code> — <code>status</code>, <code>lockedBy</code>, <code>lockedUntil</code> — lives inside <code>Show</code>'s map. The <code>ConcurrentHashMap</code> in <code>SeatLockManager</code> stores <em>only</em> <code>Lock</code> objects, used purely to serialize access; it is never asked "is this seat available," because that is not its job. Collapsing all three into one map, keyed by a string, is the single most common wrong turn this design invites — and the fastest way to lose the separation between "what the data says" and "who's currently allowed to touch it."</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 03</span><h2>The bug, without per-seat locking</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 900 320" role="img" aria-label="Sequence diagram: Thread A and Thread B both read AVAILABLE before either writes, then both write BOOKED. Both believe they succeeded.">
+          <defs>
+            <marker id="cl-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+            <marker id="cl-arrow-bad" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker-bad" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="actor-box" x="40" y="20" width="180" height="40"/>
+          <text class="actor-label" x="130" y="45" text-anchor="middle">Thread A</text>
+          <line class="actor-life" x1="130" y1="60" x2="130" y2="290"/>
+
+          <rect class="actor-box" x="360" y="20" width="200" height="40"/>
+          <text class="actor-label" x="460" y="45" text-anchor="middle">ShowSeat A10</text>
+          <line class="actor-life" x1="460" y1="60" x2="460" y2="290"/>
+
+          <rect class="actor-box" x="680" y="20" width="180" height="40"/>
+          <text class="actor-label" x="770" y="45" text-anchor="middle">Thread B</text>
+          <line class="actor-life" x1="770" y1="60" x2="770" y2="290"/>
+
+          <line class="edge-line" x1="130" y1="95" x2="456" y2="95" marker-end="url(#cl-arrow)"/>
+          <text class="edge-label" x="140" y="88">1. reads status → AVAILABLE</text>
+
+          <line class="edge-line" x1="770" y1="135" x2="464" y2="135" marker-end="url(#cl-arrow)"/>
+          <text class="edge-label" x="490" y="128">2. reads status → AVAILABLE (before A writes)</text>
+
+          <line class="edge-line" x1="130" y1="180" x2="456" y2="180" marker-end="url(#cl-arrow)"/>
+          <text class="edge-label" x="140" y="173">3. writes status → BOOKED</text>
+
+          <line class="edge-line-bad" x1="770" y1="225" x2="464" y2="225" marker-end="url(#cl-arrow-bad)"/>
+          <text class="node-member-bad" x="480" y="218">4. writes status → BOOKED — ✕ overwrites A, no conflict detected</text>
+
+          <text class="node-member-bad" x="450" y="275" text-anchor="middle" font-size="12">Result: both threads believe they succeeded — one seat, two bookings</text>
+        </svg>
+        <figcaption>Nothing here throws an exception. That's what makes it dangerous: the code runs, both requests return "200 OK," and the double-booking only surfaces later, when two people arrive at seat A10.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 03</span><h2>The fix, with per-seat locking</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 940 360" role="img" aria-label="Sequence diagram: Thread A acquires the per-seat lock, Thread B blocks. A reads and writes under the lock, then unlocks. B then acquires the lock, reads BOOKED instead of AVAILABLE, and correctly rejects.">
+          <defs>
+            <marker id="cl2-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="actor-box" x="40" y="20" width="180" height="40"/>
+          <text class="actor-label" x="130" y="45" text-anchor="middle">Thread A</text>
+          <line class="actor-life" x1="130" y1="60" x2="130" y2="330"/>
+
+          <rect class="actor-box" x="370" y="20" width="220" height="40"/>
+          <text class="actor-label" x="480" y="38" text-anchor="middle">Lock →</text>
+          <text class="actor-label" x="480" y="53" text-anchor="middle">ShowSeat A10</text>
+          <line class="actor-life" x1="480" y1="60" x2="480" y2="330"/>
+
+          <rect class="actor-box" x="720" y="20" width="180" height="40"/>
+          <text class="actor-label" x="810" y="45" text-anchor="middle">Thread B</text>
+          <line class="actor-life" x1="810" y1="60" x2="810" y2="330"/>
+
+          <rect x="124" y="90" width="12" height="115" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1"/>
+          <text class="node-member-accent" x="145" y="100" font-size="10">holds lock</text>
+
+          <rect x="804" y="125" width="12" height="110" fill="color-mix(in srgb, var(--muted) 30%, transparent)" stroke="var(--muted)" stroke-width="1"/>
+          <text class="node-member" x="670" y="120" font-size="10">blocked, waiting</text>
+
+          <line class="edge-line" x1="130" y1="95" x2="476" y2="95" marker-end="url(#cl2-arrow)"/>
+          <text class="edge-label" x="140" y="88">1. lock.lock() → acquired</text>
+
+          <line class="edge-line" x1="810" y1="130" x2="486" y2="130" marker-end="url(#cl2-arrow)"/>
+          <text class="edge-label" x="590" y="123">2. lock.lock() → blocks</text>
+
+          <line class="edge-line" x1="130" y1="165" x2="476" y2="165" marker-end="url(#cl2-arrow)"/>
+          <text class="edge-label" x="140" y="158">3. reads AVAILABLE → writes BOOKED</text>
+
+          <line class="edge-line" x1="130" y1="205" x2="476" y2="205" marker-end="url(#cl2-arrow)"/>
+          <text class="edge-label" x="140" y="198">4. lock.unlock()</text>
+
+          <line class="edge-line" x1="486" y1="240" x2="806" y2="240" marker-end="url(#cl2-arrow)"/>
+          <text class="edge-label" x="500" y="233">5. B unblocks, acquires lock</text>
+
+          <line class="edge-line" x1="810" y1="280" x2="486" y2="280" marker-end="url(#cl2-arrow)"/>
+          <text class="edge-label" x="500" y="273">6. reads BOOKED → rejects (expected)</text>
+
+          <text class="node-member-ok" x="470" y="320" text-anchor="middle" font-size="12">Result: exactly one success, one rejection — the 100-thread test passes</text>
+        </svg>
+        <figcaption>Thread B isn't blocked forever and it isn't silently dropped either — it waits its turn, then makes the same check A made, and this time the check tells the truth, because nothing could change <code>ShowSeat A10</code> while B was waiting. The lock's only job is to make steps 3–4 atomic from every other thread's point of view.</figcaption>
+      </figure>
+      <p class="note">
+        This all holds for one JVM. The lock is an in-memory <code>ReentrantLock</code>, so it says nothing about a second instance of this service running elsewhere. The spec is explicit that multi-JVM correctness — database-level constraints, pessimistic/optimistic locking at the DB, or a distributed lock via Redis — is a deliberately future concern, not something this phase implements. Building it now would be solving a problem the current architecture (single JVM, in-memory repositories) doesn't actually have yet.
+      </p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

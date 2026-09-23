@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movie Ticketing Notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">🎬 movie-ticket-booking / notes</span>
+  <a href="index.html">Overview</a>
+  <a href="domain-model.html">Domain Model</a>
+  <a href="seat-state.html">Seat State</a>
+  <a href="concurrency-locking.html">Concurrency &amp; Locking</a>
+  <a href="booking-flow.html" class="active">Booking Flow</a>
+  <a href="api-design.html">API Design</a>
+</nav>
+
+<div class="page">
+
+  <header class="titleblock">
+    <p class="eyebrow">End to end</p>
+    <h1>Booking Flow</h1>
+    <p class="sub">Browsing is plain reads — nothing here is concurrency-sensitive, so it's summarized rather than diagrammed. The interesting part starts at <code>lock</code>, where a request first changes shared state, and runs through <code>pay</code> and <code>confirm</code>.</p>
+  </header>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 04</span><h2>Before the diagram: the read-only browse steps</h2></div>
+    <p class="note">
+      <code>GET /movies</code> → <code>GET /movies/{movieId}/shows</code> → <code>GET /shows/{showId}/seats</code>. Each is a plain repository lookup with no locking and no state change — the client is just narrowing down from "all movies" to "one show's current seat map." The sequence below picks up right after the client has chosen specific seats on a specific show.
+    </p>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 04</span><h2>The happy path: lock → pay → confirm</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 1150 640" role="img" aria-label="Client calls BookingController, which calls BookingService, which locks seats via SeatLockManager, prices via PricingStrategy, takes payment via PaymentStrategy, then books seats and confirms.">
+          <defs>
+            <marker id="bf-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="actor-box" x="20" y="20" width="160" height="40"/>
+          <text class="actor-label" x="100" y="45" text-anchor="middle">Client</text>
+          <line class="actor-life" x1="100" y1="60" x2="100" y2="610"/>
+
+          <rect class="actor-box" x="250" y="20" width="180" height="40"/>
+          <text class="actor-label" x="340" y="45" text-anchor="middle">BookingController</text>
+          <line class="actor-life" x1="340" y1="60" x2="340" y2="610"/>
+
+          <rect class="actor-box" x="480" y="20" width="180" height="40"/>
+          <text class="actor-label" x="570" y="45" text-anchor="middle">BookingService</text>
+          <line class="actor-life" x1="570" y1="60" x2="570" y2="610"/>
+
+          <rect class="actor-box" x="710" y="20" width="200" height="40"/>
+          <text class="actor-label" x="805" y="38" text-anchor="middle">SeatLockManager</text>
+          <text class="actor-label" x="805" y="53" text-anchor="middle">+ ShowSeat</text>
+          <line class="actor-life" x1="805" y1="60" x2="805" y2="610"/>
+
+          <rect class="actor-box" x="960" y="20" width="170" height="40"/>
+          <text class="actor-label" x="1045" y="38" text-anchor="middle">Pricing +</text>
+          <text class="actor-label" x="1045" y="53" text-anchor="middle">Payment</text>
+          <line class="actor-life" x1="1045" y1="60" x2="1045" y2="610"/>
+
+          <line class="edge-line" x1="100" y1="95" x2="336" y2="95" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="105" y="88">1. POST /bookings/lock {showId, seatIds}</text>
+
+          <line class="edge-line" x1="340" y1="130" x2="566" y2="130" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="345" y="123">2. lockSeats(showId, seatIds, user)</text>
+
+          <line class="edge-line" x1="570" y1="165" x2="801" y2="165" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="575" y="158">3. seat.lock(user) per seat → LOCKED</text>
+
+          <line class="edge-line" x1="570" y1="200" x2="1041" y2="200" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="575" y="193">4. price = pricingStrategy.calculatePrice(seat, show)</text>
+
+          <line class="edge-line" x1="570" y1="235" x2="104" y2="235" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="580" y="228">5. 200 OK (via controller): Booking(PENDING), lockExpiry, totalAmount</text>
+
+          <line class="edge-line" x1="100" y1="290" x2="336" y2="290" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="105" y="283">6. POST /bookings/{id}/pay {method}</text>
+
+          <line class="edge-line" x1="340" y1="325" x2="566" y2="325" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="345" y="318">7. pay(bookingId, method)</text>
+
+          <line class="edge-line" x1="570" y1="360" x2="1041" y2="360" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="575" y="353">8. paymentStrategy.pay(totalAmount) → SUCCESS</text>
+
+          <line class="edge-line" x1="570" y1="395" x2="104" y2="395" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="580" y="388">9. 200 OK (via controller): payment recorded</text>
+
+          <line class="edge-line" x1="100" y1="450" x2="336" y2="450" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="105" y="443">10. POST /bookings/{id}/confirm</text>
+
+          <line class="edge-line" x1="340" y1="485" x2="566" y2="485" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="345" y="478">11. confirm(bookingId)</text>
+
+          <line class="edge-line" x1="570" y1="520" x2="801" y2="520" marker-end="url(#bf-arrow)"/>
+          <text class="edge-label" x="575" y="513">12. seat.book() per seat → BOOKED</text>
+
+          <line class="edge-line" x1="570" y1="560" x2="104" y2="560" marker-end="url(#bf-arrow)"/>
+          <text class="node-member-ok" x="580" y="553">13. 200 OK (via controller): Booking → CONFIRMED</text>
+        </svg>
+        <figcaption>Arrows 5, 9 and 13 are drawn straight back to the Client for readability — in reality every response still passes back up through <code>BookingController</code>, which does no business logic of its own, only translating between HTTP and <code>BookingService</code> calls.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 04</span><h2>Failure branches: payment failure, lock expiry</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 1000 400" role="img" aria-label="Branch A: payment fails, seats are released back to AVAILABLE, booking is cancelled. Branch B: confirm arrives after the lock expired, the seat is released, booking is rejected as expired.">
+          <defs>
+            <marker id="bf2-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+            <marker id="bf2-arrow-bad" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker-bad" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="actor-box" x="20" y="10" width="150" height="36"/>
+          <text class="actor-label" x="95" y="33" text-anchor="middle">Client</text>
+          <line class="actor-life" x1="95" y1="46" x2="95" y2="390"/>
+
+          <rect class="actor-box" x="400" y="10" width="180" height="36"/>
+          <text class="actor-label" x="490" y="33" text-anchor="middle">BookingService</text>
+          <line class="actor-life" x1="490" y1="46" x2="490" y2="390"/>
+
+          <rect class="actor-box" x="780" y="10" width="190" height="36"/>
+          <text class="actor-label" x="875" y="28" text-anchor="middle">Strategies +</text>
+          <text class="actor-label" x="875" y="42" text-anchor="middle">ShowSeat</text>
+          <line class="actor-life" x1="875" y1="46" x2="875" y2="390"/>
+
+          <text class="node-stereo" x="20" y="80">Branch A — payment fails</text>
+          <line class="edge-line" x1="490" y1="95" x2="871" y2="95" marker-end="url(#bf2-arrow)"/>
+          <text class="edge-label" x="495" y="88">paymentStrategy.pay(amount)</text>
+
+          <line class="edge-line-bad" x1="875" y1="130" x2="494" y2="130" marker-end="url(#bf2-arrow-bad)"/>
+          <text class="node-member-bad" x="600" y="123">FAILED</text>
+
+          <line class="edge-line" x1="490" y1="165" x2="871" y2="165" marker-end="url(#bf2-arrow)"/>
+          <text class="edge-label" x="495" y="158">seat.release() per seat → AVAILABLE</text>
+
+          <line class="edge-line-bad" x1="490" y1="200" x2="99" y2="200" marker-end="url(#bf2-arrow-bad)"/>
+          <text class="node-member-bad" x="150" y="193">payment failed: booking → CANCELLED, seats released</text>
+
+          <line class="node-rule" x1="0" y1="235" x2="1000" y2="235"/>
+
+          <text class="node-stereo" x="20" y="265">Branch B — confirm arrives after the lock expired</text>
+          <line class="edge-line" x1="95" y1="285" x2="486" y2="285" marker-end="url(#bf2-arrow)"/>
+          <text class="edge-label" x="100" y="278">POST /bookings/{id}/confirm</text>
+
+          <line class="edge-line-bad" x1="490" y1="320" x2="871" y2="320" marker-end="url(#bf2-arrow-bad)"/>
+          <text class="node-member-bad" x="495" y="313">lockedUntil passed → seat.release() → AVAILABLE</text>
+
+          <line class="edge-line-bad" x1="490" y1="355" x2="99" y2="355" marker-end="url(#bf2-arrow-bad)"/>
+          <text class="node-member-bad" x="150" y="348">lock expired: booking rejected — re-lock and retry</text>
+        </svg>
+        <figcaption>Both branches end the same way structurally: whatever seats were locked go back to <code>AVAILABLE</code> through <code>ShowSeat.release()</code>, never through a direct field write. The State pattern is what makes these cleanup paths trustworthy — <code>release()</code> already knows it's only legal from <code>LOCKED</code>, so there's no way for a failure handler to "release" a seat that was never locked in the first place.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

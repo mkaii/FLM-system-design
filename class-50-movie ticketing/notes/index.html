@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movie Ticketing Notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">🎬 movie-ticket-booking / notes</span>
+  <a href="index.html" class="active">Overview</a>
+  <a href="domain-model.html">Domain Model</a>
+  <a href="seat-state.html">Seat State</a>
+  <a href="concurrency-locking.html">Concurrency &amp; Locking</a>
+  <a href="booking-flow.html">Booking Flow</a>
+  <a href="api-design.html">API Design</a>
+</nav>
+
+<div class="page">
+
+  <header class="titleblock">
+    <p class="eyebrow">Class 50 — Movie Ticket Booking · Design Notes, Before Any Code</p>
+    <h1>System Overview</h1>
+    <p class="sub">A BookMyShow-style booking system, built as an LLD exercise: plain-Java domain and business logic, Spring Boot only as the web layer. The one hard requirement running through everything below: two users racing for the same seat on the same show — exactly one of them wins.</p>
+    <dl class="meta-row">
+      <div class="meta-item"><dt>domain classes</dt><dd>9</dd></div>
+      <div class="meta-item"><dt>required patterns</dt><dd>State · Strategy ×2</dd></div>
+      <div class="meta-item"><dt>concurrency</dt><dd>per-seat locking</dd></div>
+      <div class="meta-item"><dt>build phases</dt><dd>10</dd></div>
+    </dl>
+  </header>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 00</span><h2>Layering — who talks to whom</h2></div>
+    <div class="sheet-body">
+      <figure>
+        <svg class="diagram" viewBox="0 0 920 560" role="img" aria-label="Client calls four controllers, each calling its matching service. BookingService is the most connected class: it reaches the domain model, the seat lock manager, the pricing strategy, and the booking repository. PaymentService reaches the payment strategy instead of a repository, since payment is mocked.">
+          <defs>
+            <marker id="ov-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow-marker" d="M0,0 L8,4 L0,8"/></marker>
+          </defs>
+
+          <rect class="node-box" x="355" y="20" width="190" height="50"/>
+          <text class="node-title" x="450" y="50" text-anchor="middle">Client / Postman</text>
+
+          <line class="edge-line" x1="450" y1="70" x2="450" y2="100"/>
+          <line class="edge-line" x1="140" y1="100" x2="770" y2="100"/>
+          <line class="edge-line" x1="140" y1="100" x2="140" y2="138" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="350" y1="100" x2="350" y2="138" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="560" y1="100" x2="560" y2="138" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="770" y1="100" x2="770" y2="138" marker-end="url(#ov-arrow)"/>
+
+          <rect class="node-box" x="45" y="140" width="190" height="50"/>
+          <text class="node-title" x="140" y="170" text-anchor="middle">MovieController</text>
+          <rect class="node-box" x="255" y="140" width="190" height="50"/>
+          <text class="node-title" x="350" y="170" text-anchor="middle">ShowController</text>
+          <rect class="node-box" x="465" y="140" width="190" height="50"/>
+          <text class="node-title" x="560" y="170" text-anchor="middle">BookingController</text>
+          <rect class="node-box" x="675" y="140" width="190" height="50"/>
+          <text class="node-title" x="770" y="170" text-anchor="middle">PaymentController</text>
+
+          <line class="edge-line" x1="140" y1="190" x2="140" y2="248" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="350" y1="190" x2="350" y2="248" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="560" y1="190" x2="560" y2="248" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="770" y1="190" x2="770" y2="248" marker-end="url(#ov-arrow)"/>
+
+          <rect class="node-box" x="45" y="250" width="190" height="50"/>
+          <text class="node-title" x="140" y="280" text-anchor="middle">MovieService</text>
+          <rect class="node-box" x="255" y="250" width="190" height="50"/>
+          <text class="node-title" x="350" y="280" text-anchor="middle">ShowService</text>
+          <rect class="node-box node-box-accent" x="465" y="250" width="190" height="50"/>
+          <text class="node-title" x="560" y="280" text-anchor="middle">BookingService</text>
+          <rect class="node-box" x="675" y="250" width="190" height="50"/>
+          <text class="node-title" x="770" y="280" text-anchor="middle">PaymentService</text>
+          <text class="node-member" x="770" y="316" text-anchor="middle">(mocked — no repository yet)</text>
+
+          <rect class="node-box" x="20" y="360" width="190" height="60"/>
+          <text class="node-stereo" x="32" y="376">«concurrency»</text>
+          <text class="node-title" x="32" y="394">SeatLockManager</text>
+          <text class="node-member" x="32" y="410">— see Sheet 2 —</text>
+
+          <rect class="node-box" x="230" y="360" width="380" height="60"/>
+          <text class="node-stereo" x="242" y="376">«domain»</text>
+          <text class="node-title" x="242" y="394">Domain Model</text>
+          <text class="node-member" x="242" y="410">Movie · Theatre · Screen · Seat · Show · ShowSeat · Booking · User · Payment</text>
+
+          <rect class="node-box" x="630" y="352" width="270" height="76"/>
+          <text class="node-stereo" x="642" y="368">«strategy, pluggable»</text>
+          <text class="node-title" x="642" y="386">PricingStrategy</text>
+          <text class="node-title" x="642" y="404">PaymentStrategy</text>
+          <text class="node-member" x="642" y="420">— see Sheet 5 —</text>
+
+          <line class="edge-line" x1="465" y1="290" x2="235" y2="362" marker-end="url(#ov-arrow)"/>
+          <text class="edge-label" x="290" y="335">creates / updates</text>
+
+          <line class="edge-line" x1="465" y1="285" x2="212" y2="378" marker-end="url(#ov-arrow)"/>
+          <text class="edge-label" x="150" y="340">acquires lock via</text>
+
+          <line class="edge-line" x1="655" y1="278" x2="628" y2="368" marker-end="url(#ov-arrow)"/>
+          <text class="edge-label" x="600" y="330">computes price via</text>
+
+          <line class="edge-line" x1="770" y1="300" x2="720" y2="350" marker-end="url(#ov-arrow)"/>
+          <text class="edge-label" x="680" y="335">processes via</text>
+
+          <line class="edge-line" x1="140" y1="300" x2="140" y2="478" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="350" y1="300" x2="350" y2="478" marker-end="url(#ov-arrow)"/>
+          <line class="edge-line" x1="560" y1="300" x2="465" y2="478" marker-end="url(#ov-arrow)"/>
+          <text class="edge-label" x="380" y="440">persists via</text>
+
+          <rect class="node-box" x="45" y="480" width="190" height="50"/>
+          <text class="node-title" x="140" y="510" text-anchor="middle">MovieRepository</text>
+          <rect class="node-box" x="255" y="480" width="190" height="50"/>
+          <text class="node-title" x="350" y="510" text-anchor="middle">ShowRepository</text>
+          <rect class="node-box" x="465" y="480" width="190" height="50"/>
+          <text class="node-title" x="560" y="510" text-anchor="middle">BookingRepository</text>
+        </svg>
+        <figcaption>Every arrow here is one class calling another. Notice <code>BookingService</code> (highlighted) is the busiest class in the system by design — it is the one place that coordinates the domain model, the lock manager, pricing, and persistence for a single booking. That concentration is deliberate and worth defending in an interview: the alternative is spreading booking logic across several classes that then all need to agree on ordering.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 00</span><h2>Package structure</h2></div>
+    <div class="sheet-body" style="font-family:'IBM Plex Mono',monospace; font-size:0.85rem; line-height:1.8; padding-bottom:10px;">
+movie-booking/<br>
+├── controller/&nbsp;&nbsp;<span style="color:var(--muted)">thin — parse request, call one service method, return response</span><br>
+├── domain/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">Movie, Theatre, Screen, Seat, Show, ShowSeat, Booking, User, Payment</span><br>
+├── service/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">MovieService, ShowService, BookingService, PaymentService</span><br>
+├── repository/&nbsp;&nbsp;<span style="color:var(--muted)">interfaces + InMemory* implementations</span><br>
+├── pricing/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">PricingStrategy + Regular/Weekend/Holiday</span><br>
+├── payment/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">PaymentStrategy + Mock/Card/UPI</span><br>
+├── locking/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">SeatLockManager, per-ShowSeat ReentrantLock registry</span><br>
+├── state/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">SeatState + Available/Locked/Booked</span><br>
+├── exception/<br>
+└── test/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted)">including the 100-thread concurrent-booking test</span>
+      </div>
+      <p class="note">Only <code>controller/</code> may depend on Spring. Everything else must be pluggable, constructor-injected, plain Java — testable without a Spring context at all.</p>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 00</span><h2>Build order (10 phases)</h2></div>
+    <ol class="checklist" style="padding-top:14px;">
+      <li data-n="1">Domain model — the 9 classes and their relationships, no Spring, no persistence.</li>
+      <li data-n="2">Repository interfaces + in-memory implementations.</li>
+      <li data-n="3">Basic services — Movie, Show, Booking, Payment — plain Java.</li>
+      <li data-n="4">Pricing strategy — Regular / Weekend / Holiday.</li>
+      <li data-n="5">Seat state — start with an enum, replace with the State pattern once the design justifies it.</li>
+      <li data-n="6">Temporary seat locking — <code>SeatLockManager</code>, configurable expiry.</li>
+      <li data-n="7">Thread safety — per-<code>ShowSeat</code> <code>ReentrantLock</code>, atomic check-then-act.</li>
+      <li data-n="8">Concurrent tests — many threads racing one seat, exactly one winner.</li>
+      <li data-n="9">Spring Boot REST APIs — thin controllers over the already-working core.</li>
+      <li data-n="10">Design review — SOLID, DRY, encapsulation, extensibility, error handling.</li>
+    </ol>
+    <p class="note">Note the order: State (5) and locking (6–7) come <em>before</em> Spring Boot (9). The instruction is explicit — do not generate the whole project at once, and do not reach for Spring until the plain-Java core already works and is tested.</p>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 00</span><h2>The 13 questions this design has to survive</h2></div>
+    <ol class="checklist" style="padding-top:14px;">
+      <li data-n="1">Why is <code>Show</code> separate from <code>Movie</code> and <code>Screen</code>?</li>
+      <li data-n="2">Why does <code>ShowSeat</code> exist at all?</li>
+      <li data-n="3">Why is availability stored on <code>ShowSeat</code> instead of <code>Seat</code>?</li>
+      <li data-n="4">How does pricing stay extensible?</li>
+      <li data-n="5">Why use the Strategy pattern for it?</li>
+      <li data-n="6">When would the State pattern actually be useful here?</li>
+      <li data-n="7">How is double booking prevented?</li>
+      <li data-n="8">Why per-seat locking instead of one global lock?</li>
+      <li data-n="9">What role does <code>ConcurrentHashMap</code> actually play?</li>
+      <li data-n="10">What happens when payment fails?</li>
+      <li data-n="11">What happens when a seat lock expires?</li>
+      <li data-n="12">What changes with multiple Spring Boot instances?</li>
+      <li data-n="13">How would database locking or Redis change the design?</li>
+    </ol>
+    <p class="note">Every other sheet in this set exists to answer one or more of these. Questions 2–3, 7–9 are the load-bearing ones — get those wrong and the rest of the design doesn't hold up.</p>
+  </section>
+
+</div>
+</body>
+</html>

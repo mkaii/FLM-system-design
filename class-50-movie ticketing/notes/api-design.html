@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movie Ticketing Notes</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">🎬 movie-ticket-booking / notes</span>
+  <a href="index.html">Overview</a>
+  <a href="domain-model.html">Domain Model</a>
+  <a href="seat-state.html">Seat State</a>
+  <a href="concurrency-locking.html">Concurrency &amp; Locking</a>
+  <a href="booking-flow.html">Booking Flow</a>
+  <a href="api-design.html" class="active">API Design</a>
+</nav>
+
+<div class="page">
+
+  <header class="titleblock">
+    <p class="eyebrow">Phase 9 — Spring Boot APIs</p>
+    <h1>API Design</h1>
+    <p class="sub">The spec's 7 suggested endpoints, mapped back to the 8 numbered user actions from the Problem Statement. This is a table, not a diagram — the API surface is naturally tabular, and forcing it into boxes and arrows wouldn't make it any clearer.</p>
+    <div class="meta-row">
+      <div class="meta-item"><dt>endpoints</dt><dd>7</dd></div>
+      <div class="meta-item"><dt>user actions (spec)</dt><dd>8</dd></div>
+      <div class="meta-item"><dt>error cases (spec)</dt><dd>5</dd></div>
+    </div>
+  </header>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 05</span><h2>The 8 user actions, from the Problem Statement</h2></div>
+    <ol class="checklist">
+      <li data-n="1.">Browse movies.</li>
+      <li data-n="2.">Browse theatres and screens.</li>
+      <li data-n="3.">View shows for a movie.</li>
+      <li data-n="4.">View seats for a particular show.</li>
+      <li data-n="5.">Select seats.</li>
+      <li data-n="6.">Temporarily lock selected seats.</li>
+      <li data-n="7.">Complete payment.</li>
+      <li data-n="8.">Confirm a booking.</li>
+    </ol>
+    <p class="note">
+      The spec's own suggested API list has no endpoint for action 2 — browsing theatres and screens. It's called out honestly below on each card rather than papered over: as written, a client can jump straight from "browse movies" to "view shows for a movie" without ever listing theatres, which is fine for a single-theatre-per-city demo but worth noticing before assuming the API list is complete.
+    </p>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 05</span><h2>Endpoints</h2></div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb get">GET</span> /movies</div>
+      <p class="usecase">Covers action 1 — browse movies.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input</h4><pre>(no path, query or body params)</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>[
+  {
+    "id": "m1",
+    "name": "...",
+    "duration": 150,
+    "language": "English",
+    "genre": "Action"
+  }
+]</pre></div>
+      </div>
+      <p class="talks-to">MovieController → MovieService → MovieRepository</p>
+    </div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb get">GET</span> /movies/{movieId}/shows</div>
+      <p class="usecase">Covers action 3 — view shows for a movie.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input</h4><pre>path: movieId</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>[
+  {
+    "id": "show101",
+    "movieId": "m1",
+    "screenId": "scr1",
+    "startTime": "...",
+    "endTime": "..."
+  }
+]</pre></div>
+      </div>
+      <p class="talks-to">ShowController → ShowService → ShowRepository (filtered by movieId)</p>
+    </div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb get">GET</span> /shows/{showId}/seats</div>
+      <p class="usecase">Covers action 4 — view seats for a particular show. Example straight from the spec.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input</h4><pre>path: showId
+e.g. GET /shows/101/seats</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>[
+  {
+    "seatNumber": "A1",
+    "type": "REGULAR",
+    "status": "AVAILABLE"
+  },
+  {
+    "seatNumber": "A2",
+    "type": "PREMIUM",
+    "status": "BOOKED"
+  }
+]</pre></div>
+      </div>
+      <p class="talks-to">ShowController → ShowService → Show's own Map&lt;SeatId, ShowSeat&gt; (read directly — no repository call, since ShowSeats live inside the Show, not in a separate store)</p>
+    </div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb post">POST</span> /bookings/lock</div>
+      <p class="usecase">Covers actions 5 &amp; 6 — the client has already selected seats; this call is what turns that selection into a real, held lock.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input — body</h4><pre>{
+  "showId": "show101",
+  "seatIds": ["A1", "A2"],
+  "userId": "u1"
+}</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>{
+  "bookingId": "b1",
+  "status": "PENDING",
+  "lockedSeats": ["A1", "A2"],
+  "lockExpiresAt": "...",
+  "totalAmount": 500
+}</pre></div>
+      </div>
+      <p class="talks-to">BookingController → BookingService → SeatLockManager (per-seat lock) → ShowSeat.lock() → PricingStrategy.calculatePrice() → BookingRepository (creates PENDING booking)</p>
+    </div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb post">POST</span> /bookings/{bookingId}/pay</div>
+      <p class="usecase">Covers action 7 — complete payment.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input</h4><pre>path: bookingId
+body: { "paymentMethod": "CARD" }</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>{
+  "bookingId": "b1",
+  "paymentStatus": "SUCCESS"
+}</pre></div>
+      </div>
+      <p class="talks-to">BookingController → BookingService → PaymentStrategy.pay(amount) → BookingRepository (records payment result; on failure, releases locked seats — see Booking Flow, Branch A)</p>
+    </div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb post">POST</span> /bookings/{bookingId}/confirm</div>
+      <p class="usecase">Covers action 8 — confirm a booking.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input</h4><pre>path: bookingId</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>{
+  "bookingId": "b1",
+  "status": "CONFIRMED",
+  "seats": ["A1", "A2"]
+}</pre></div>
+      </div>
+      <p class="talks-to">BookingController → BookingService → ShowSeat.book() per locked seat → BookingRepository (status → CONFIRMED)</p>
+    </div>
+
+    <div class="api-card">
+      <div class="verb-path"><span class="verb get">GET</span> /bookings/{bookingId}</div>
+      <p class="usecase">Not one of the 8 numbered actions directly — supporting read, used e.g. to poll status after payment or while a lock is still counting down.</p>
+      <div class="io-grid">
+        <div class="io-block"><h4>Input</h4><pre>path: bookingId</pre></div>
+        <div class="io-block"><h4>Output — 200</h4><pre>{
+  "bookingId": "b1",
+  "status": "PENDING",
+  "seats": ["A1", "A2"],
+  "totalAmount": 500,
+  "createdAt": "..."
+}</pre></div>
+      </div>
+      <p class="talks-to">BookingController → BookingService → BookingRepository</p>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheet-head"><span class="no">SHEET 05</span><h2>Error cases — spec wording, plus proposed status codes</h2></div>
+    <div class="sheet-body">
+      <table class="errtable">
+        <thead><tr><th>Case</th><th>Spec says</th><th>Proposed status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Seat already booked</td>
+            <td>Reject the booking attempt.</td>
+            <td><span class="status-pill">409 Conflict</span></td>
+          </tr>
+          <tr>
+            <td>Seat already locked</td>
+            <td>Reject the booking attempt if another user owns the lock.</td>
+            <td><span class="status-pill">409 Conflict</span></td>
+          </tr>
+          <tr>
+            <td>Lock expired</td>
+            <td>The seat should become available.</td>
+            <td><span class="status-pill">410 Gone</span></td>
+          </tr>
+          <tr>
+            <td>Payment failure</td>
+            <td>Release the locked seats.</td>
+            <td><span class="status-pill">402 Payment Required</span></td>
+          </tr>
+          <tr>
+            <td>Invalid state transition</td>
+            <td>Prevent transitions such as BOOKED → AVAILABLE through normal booking operations.</td>
+            <td><span class="status-pill">409 Conflict</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">
+        The left two columns are quoted from the spec's own "Error Cases" section. The status codes are <strong>proposed, not spec-mandated</strong> — the spec describes required behavior (reject, release, prevent) but never names an HTTP status. <code>402</code> is a semantically fitting but unusual choice for a REST API in practice; <code>400 Bad Request</code> is a defensible substitute if consistency with the rest of a team's existing API conventions matters more than semantic precision.
+      </p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
