@@ -3,7 +3,7 @@ package com.mainak.movieticket.repository;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.mainak.movieticket.domain.Booking;
+import com.mainak.movieticket.Model.Booking;
 
 public class InMemoryBookingRepository implements BookingRepository {
 
@@ -13,6 +13,9 @@ public class InMemoryBookingRepository implements BookingRepository {
         return bookings.get(id);
     }
 
+    /**
+     * <ul><li>Stores the booking in memory under its booking ID.</li></ul>
+     */
     public void save(Booking booking) {
         bookings.put(booking.getId(), booking);
     }

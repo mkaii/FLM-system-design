@@ -2,7 +2,7 @@ package com.mainak.movieticket.service;
 
 import java.util.List;
 
-import com.mainak.movieticket.domain.Movie;
+import com.mainak.movieticket.Model.Movie;
 import com.mainak.movieticket.repository.InMemoryMovieRepository;
 import com.mainak.movieticket.repository.MovieRepository;
 

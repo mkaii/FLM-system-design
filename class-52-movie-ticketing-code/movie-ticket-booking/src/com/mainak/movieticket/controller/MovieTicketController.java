@@ -3,10 +3,15 @@ package com.mainak.movieticket.controller;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.mainak.movieticket.domain.Movie;
-import com.mainak.movieticket.domain.Payment;
-import com.mainak.movieticket.domain.Show;
-import com.mainak.movieticket.domain.ShowSeat;
+import com.mainak.movieticket.Model.Movie;
+import com.mainak.movieticket.Model.Payment;
+import com.mainak.movieticket.Model.Show;
+import com.mainak.movieticket.Model.ShowSeat;
+import com.mainak.movieticket.Model.BookingResponse;
+import com.mainak.movieticket.Model.LockSeatsRequest;
+import com.mainak.movieticket.Model.PaymentResponse;
+import com.mainak.movieticket.Model.SeatResponse;
+import com.mainak.movieticket.Model.ShowResponse;
 import com.mainak.movieticket.service.BookingService;
 import com.mainak.movieticket.service.MovieService;
 import com.mainak.movieticket.service.ShowService;
@@ -54,6 +59,9 @@ public class MovieTicketController {
         return result;
     }
 
+    /**
+     * <ul><li>Accepts a seat-selection request and returns the newly locked booking.</li></ul>
+     */
     @PostMapping("/bookings/lock")
     public BookingResponse lockSeats(@RequestBody LockSeatsRequest request) {
         try {
@@ -64,6 +72,9 @@ public class MovieTicketController {
         }
     }
 
+    /**
+     * <ul><li>Accepts payment for an existing pending booking.</li></ul>
+     */
     @PostMapping("/bookings/{bookingId}/pay")
     public PaymentResponse pay(@PathVariable String bookingId) {
         try {
@@ -74,6 +85,9 @@ public class MovieTicketController {
         }
     }
 
+    /**
+     * <ul><li>Finalizes a successfully paid booking.</li></ul>
+     */
     @PostMapping("/bookings/{bookingId}/confirm")
     public BookingResponse confirm(@PathVariable String bookingId) {
         try {

@@ -1,7 +1,7 @@
 package com.mainak.movieticket.pricing;
 
-import com.mainak.movieticket.domain.Show;
-import com.mainak.movieticket.domain.ShowSeat;
+import com.mainak.movieticket.Model.Show;
+import com.mainak.movieticket.Model.ShowSeat;
 
 public interface PricingStrategy {
 

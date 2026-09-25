@@ -1,0 +1,76 @@
+{
+  "info": {
+    "_postman_id": "ae5f72c2-7dc4-43e6-9f68-47993f85e7c1",
+    "name": "Movie Ticket Booking API",
+    "description": "Ordered walkthrough for the local Spring Boot movie ticket booking app. Run requests from top to bottom. The lock request stores bookingId for the remaining booking requests. Seeded data: movie M1, show SHOW101, seats S1 (regular), S2 (premium), S3 (recliner). Payment is mocked by the application.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "movieId", "value": "M1" },
+    { "key": "showId", "value": "SHOW101" },
+    { "key": "seatId", "value": "S1" },
+    { "key": "userId", "value": "user-101" },
+    { "key": "bookingId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Browse movies",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/movies", "description": "Lists available movies. The seeded movie is Interstellar (M1)." },
+      "response": []
+    },
+    {
+      "name": "2. List shows for movie",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/movies/{{movieId}}/shows", "description": "Lists shows for M1. The seeded show is SHOW101." },
+      "response": []
+    },
+    {
+      "name": "3. Check seats for show",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/shows/{{showId}}/seats", "description": "Check seat statuses before choosing. Seeded seat IDs: S1, S2, S3." },
+      "response": []
+    },
+    {
+      "name": "4. Lock seats and create booking",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const data = pm.response.json();",
+              "  if (data.id) {",
+              "    pm.collectionVariables.set('bookingId', data.id);",
+              "    console.log('Saved bookingId:', data.id);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"showId\": \"{{showId}}\",\n  \"seatIds\": [\"{{seatId}}\"],\n  \"userId\": \"{{userId}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/bookings/lock",
+        "description": "Locks S1 for five minutes and creates a pending booking. Change the seatId collection variable to S2 or S3 to try another seat."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Pay for booking",
+      "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/bookings/{{bookingId}}/pay", "description": "Processes the mock payment. Run within the five-minute seat lock." },
+      "response": []
+    },
+    {
+      "name": "6. Confirm booking",
+      "request": { "method": "POST", "header": [], "url": "{{baseUrl}}/bookings/{{bookingId}}/confirm", "description": "Confirms the booking after successful payment." },
+      "response": []
+    },
+    {
+      "name": "7. Get booking details",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/bookings/{{bookingId}}", "description": "Fetches the final booking status and selected seats." },
+      "response": []
+    }
+  ]
+}

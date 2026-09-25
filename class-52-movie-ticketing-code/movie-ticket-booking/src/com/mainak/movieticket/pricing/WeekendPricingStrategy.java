@@ -1,8 +1,8 @@
 package com.mainak.movieticket.pricing;
 
-import com.mainak.movieticket.domain.SeatType;
-import com.mainak.movieticket.domain.Show;
-import com.mainak.movieticket.domain.ShowSeat;
+import com.mainak.movieticket.Model.SeatType;
+import com.mainak.movieticket.Model.Show;
+import com.mainak.movieticket.Model.ShowSeat;
 
 import java.util.Map;
 

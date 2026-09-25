@@ -1,7 +1,7 @@
 package com.mainak.movieticket.state;
 
-import com.mainak.movieticket.domain.SeatStatus;
-import com.mainak.movieticket.domain.ShowSeat;
+import com.mainak.movieticket.Model.SeatStatus;
+import com.mainak.movieticket.Model.ShowSeat;
 import com.mainak.movieticket.exception.InvalidStateTransitionException;
 
 public class AvailableState implements SeatState {

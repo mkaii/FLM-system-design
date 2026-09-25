@@ -1,6 +1,6 @@
 package com.mainak.movieticket.repository;
 
-import com.mainak.movieticket.domain.Booking;
+import com.mainak.movieticket.Model.Booking;
 
 public interface BookingRepository {
 

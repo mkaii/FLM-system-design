@@ -8,14 +8,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.mainak.movieticket.domain.Booking;
-import com.mainak.movieticket.domain.BookingStatus;
-import com.mainak.movieticket.domain.Payment;
-import com.mainak.movieticket.domain.PaymentStatus;
-import com.mainak.movieticket.domain.SeatStatus;
-import com.mainak.movieticket.domain.Show;
-import com.mainak.movieticket.domain.ShowSeat;
-import com.mainak.movieticket.domain.User;
+import com.mainak.movieticket.Model.Booking;
+import com.mainak.movieticket.Model.BookingStatus;
+import com.mainak.movieticket.Model.Payment;
+import com.mainak.movieticket.Model.PaymentStatus;
+import com.mainak.movieticket.Model.SeatStatus;
+import com.mainak.movieticket.Model.Show;
+import com.mainak.movieticket.Model.ShowSeat;
+import com.mainak.movieticket.Model.User;
 import com.mainak.movieticket.exception.InvalidStateTransitionException;
 import com.mainak.movieticket.exception.SeatNotAvailableException;
 import com.mainak.movieticket.locking.SeatLockManager;
@@ -38,31 +38,17 @@ public class BookingService {
     private final AtomicInteger paymentCounter = new AtomicInteger();
 
     public BookingService(ShowService showService) {
-        this(new InMemoryBookingRepository(), showService, new SeatLockManager(),
-                new RegularPricingStrategy(), new PaymentService(new MockPaymentStrategy()), Duration.ofMinutes(5));
-    }
-
-    public BookingService(BookingRepository bookingRepository, ShowService showService,
-                           SeatLockManager seatLockManager, PricingStrategy pricingStrategy,
-                           PaymentService paymentService) {
-        this(bookingRepository, showService, seatLockManager, pricingStrategy, paymentService,
-                Duration.ofMinutes(5));
-    }
-
-    public BookingService(BookingRepository bookingRepository, ShowService showService,
-                          SeatLockManager seatLockManager, PricingStrategy pricingStrategy,
-                          PaymentService paymentService, Duration lockDuration) {
-        this.bookingRepository = bookingRepository;
+        this.bookingRepository = new InMemoryBookingRepository();
         this.showService = showService;
-        this.seatLockManager = seatLockManager;
-        this.pricingStrategy = pricingStrategy;
-        this.paymentService = paymentService;
-        if (lockDuration == null || lockDuration.isNegative() || lockDuration.isZero()) {
-            throw new IllegalArgumentException("Lock duration must be positive");
-        }
-        this.lockDuration = lockDuration;
+        this.seatLockManager = new SeatLockManager();
+        this.pricingStrategy = new RegularPricingStrategy();
+        this.paymentService = new PaymentService(new MockPaymentStrategy());
+        this.lockDuration = Duration.ofMinutes(5);
     }
 
+    /**
+     * <ul><li>Validates selected seats, locks them briefly, and creates a pending booking.</li></ul>
+     */
     public Booking lockSeats(String showId, List<String> seatIds, String userId) {
         Show show = requireShow(showId);
         if (seatIds == null || seatIds.isEmpty()) {
@@ -88,7 +74,7 @@ public class BookingService {
             lockKeys.add(buildLockKey(showSeat));
         }
 
-        return seatLockManager.withSeatLocks(lockKeys, () -> {
+        return seatLockManager.executeWhileSeatLocksHeld(lockKeys, () -> {
             Instant now = Instant.now();
             for (ShowSeat showSeat : selectedSeats) {
                 releaseIfExpired(showSeat, now);
@@ -113,9 +99,12 @@ public class BookingService {
         });
     }
 
+    /**
+     * <ul><li>Processes payment and releases seats if the payment fails.</li></ul>
+     */
     public Payment pay(String bookingId) {
         Booking booking = requireBooking(bookingId);
-        return seatLockManager.withSeatLocks(lockKeysFor(booking), () -> {
+        return seatLockManager.executeWhileSeatLocksHeld(lockKeysFor(booking), () -> {
             if (booking.getStatus() != BookingStatus.PENDING) {
                 throw new InvalidStateTransitionException("Only pending bookings can be paid for");
             }
@@ -136,9 +125,12 @@ public class BookingService {
         });
     }
 
+    /**
+     * <ul><li>Turns successfully paid, locked seats into permanently booked seats.</li></ul>
+     */
     public Booking confirm(String bookingId) {
         Booking booking = requireBooking(bookingId);
-        return seatLockManager.withSeatLocks(lockKeysFor(booking), () -> {
+        return seatLockManager.executeWhileSeatLocksHeld(lockKeysFor(booking), () -> {
             if (booking.getStatus() != BookingStatus.PENDING || booking.getPaymentStatus() != PaymentStatus.SUCCESS) {
                 throw new InvalidStateTransitionException("A pending booking with successful payment is required");
             }
@@ -191,6 +183,9 @@ public class BookingService {
         return keys;
     }
 
+    /**
+     * <ul><li>Finds the requested show and stops the flow if it does not exist.</li></ul>
+     */
     private Show requireShow(String showId) {
         Show show = showService.getShowById(showId);
         if (show == null || show.getShowSeats() == null) {

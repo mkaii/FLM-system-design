@@ -3,12 +3,12 @@ package com.mainak.movieticket.service;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.mainak.movieticket.domain.Show;
-import com.mainak.movieticket.domain.ShowSeat;
-import com.mainak.movieticket.domain.Movie;
-import com.mainak.movieticket.domain.Screen;
-import com.mainak.movieticket.domain.Seat;
-import com.mainak.movieticket.domain.SeatType;
+import com.mainak.movieticket.Model.Show;
+import com.mainak.movieticket.Model.ShowSeat;
+import com.mainak.movieticket.Model.Movie;
+import com.mainak.movieticket.Model.Screen;
+import com.mainak.movieticket.Model.Seat;
+import com.mainak.movieticket.Model.SeatType;
 import com.mainak.movieticket.repository.InMemoryShowRepository;
 import com.mainak.movieticket.repository.ShowRepository;
 
@@ -42,6 +42,9 @@ public class ShowService {
         return showRepository.findByMovieId(movieId);
     }
 
+    /**
+     * <ul><li>Retrieves one show so booking logic can inspect its seats.</li></ul>
+     */
     public Show getShowById(String showId) {
         return showRepository.findById(showId);
     }

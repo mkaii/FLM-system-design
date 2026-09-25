@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.mainak.movieticket.domain.Show;
+import com.mainak.movieticket.Model.Show;
 
 public class InMemoryShowRepository implements ShowRepository {
 

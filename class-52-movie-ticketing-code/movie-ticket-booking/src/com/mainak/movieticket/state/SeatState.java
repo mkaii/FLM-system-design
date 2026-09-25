@@ -1,6 +1,6 @@
 package com.mainak.movieticket.state;
 
-import com.mainak.movieticket.domain.ShowSeat;
+import com.mainak.movieticket.Model.ShowSeat;
 
 public interface SeatState {
 

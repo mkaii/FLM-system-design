@@ -2,7 +2,7 @@ package com.mainak.movieticket.repository;
 
 import java.util.List;
 
-import com.mainak.movieticket.domain.Movie;
+import com.mainak.movieticket.Model.Movie;
 
 public interface MovieRepository {
 
