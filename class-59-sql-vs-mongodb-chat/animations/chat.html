@@ -14,6 +14,10 @@
 .story { padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--purple-bg); font-size: 16px; line-height: 1.6; }
 .story b { color: var(--purple); }
 .story .ask { display: block; margin-top: 4px; }
+.score { font-size: 14px; }
+.score td { padding: 5px 10px; }
+.score th { padding: 4px 10px; }
+.rule { margin-top: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.5; }
 .story .q { display: block; margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 2px dashed var(--amber); font-size: 17px; font-weight: 600; }
 .story .q b { color: var(--amber); }
 .answer { padding: 16px 18px; border-top: 1px solid var(--line); background: var(--good-bg); }
@@ -136,7 +140,7 @@ function rowsHTML(id) {
 }
 function table(id, x, y, title, cols, rows, o = {}) {
   T[id] = { rows: rows.map(t => ({ t, s: '' })), compact: o.compact };
-  Net.node(id, { x, y, label: title, sub: cols, kind: 'db', w: o.w || 300, body: rowsHTML(id) });
+  Net.node(id, { x, y, label: title, sub: cols, kind: o.kind || 'db', w: o.w || 300, body: rowsHTML(id) });
 }
 const paintT = id => Net.set(id, { body: rowsHTML(id) });
 function addRow(id, t) { T[id].rows.push({ t, s: 'new' }); paintT(id); }
@@ -648,7 +652,251 @@ async function run7(ctx) {
   say('<b>SQL.</b> Her name is <b>shared</b> by all her messages and it can change, so store it once. The MongoDB fix: keep only her id in each message and look the name up, the way SQL does.', 'win');
 }
 
-// ================= Step 8: scoreboard =================
+// ================= Step 9: add a third server (resharding) =================
+const MOVES_SQL = [['sA1', 'sC3', 'chat 2'], ['sA1', 'sB2', 'chat 4'], ['sA1', 'sC3', 'chat 8'], ['sB2', 'sA1', 'chat 3'], ['sB2', 'sC3', 'chat 5'], ['sB2', 'sA1', 'chat 9']];
+const MOVES_MG = [['mA1', 'mC3', 'chat 8'], ['mB2', 'mC3', 'chat 7'], ['mB2', 'mC3', 'chat 9']];
+async function moveChats(ctx, moves) {
+  moves.forEach(m => markRows(m[0], r => r.t === m[2], 'bad'));
+  await Net.beat(ctx, 1800);
+  await Promise.all(moves.map(async m => {
+    await send(m[0], m[1], m[2], 'amber', 1000);
+    T[m[0]].rows = T[m[0]].rows.filter(r => r.t !== m[2]);
+    paintT(m[0]);
+    addRow(m[1], m[2]);
+  }));
+  Net.check(ctx);
+}
+function setup9() {
+  lanes('SQL: sharded by hand (the app picks the server)', 'MongoDB: built-in sharding');
+  app('sA', 110, TS + 100);
+  show('sA', '<code>server = chat_id % 2</code>');
+  counter('sC', 110, TS + 250, 'Chats moved', 0);
+  table('sA1', 390, LS, 'Server A', 'chat_id % 2 = 0', ['chat 2', 'chat 4', 'chat 6', 'chat 8'], { compact: true, w: 190 });
+  table('sB2', 600, LS, 'Server B', 'chat_id % 2 = 1', ['chat 1', 'chat 3', 'chat 5', 'chat 7', 'chat 9'], { compact: true, w: 190 });
+  Net.link('sA', 'sA1');
+  Net.link('sA', 'sB2');
+  app('mA', 110, TM + 100);
+  show('mA', 'asks <b>mongos</b> (the router)');
+  counter('mC', 110, TM + 250, 'Chats moved', 0);
+  table('mA1', 390, LM, 'Shard A', 'chunks', ['chat 2', 'chat 4', 'chat 6', 'chat 8'], { compact: true, w: 190, kind: 'lb' });
+  table('mB2', 600, LM, 'Shard B', 'chunks', ['chat 1', 'chat 3', 'chat 5', 'chat 7', 'chat 9'], { compact: true, w: 190, kind: 'lb' });
+  Net.link('mA', 'mA1');
+  Net.link('mA', 'mB2');
+  setQ('sql', "-- 1. change the routing rule in YOUR app, then redeploy\n--    server = chat_id % 2   →   server = chat_id % 3\n\n-- 2. for each of the 6 chats that now belong elsewhere,\n--    on the old server, read it out:\nSELECT * FROM messages WHERE chat_id = 2;\n--    on the new server, write it in:\nINSERT INTO messages VALUES (...);\n--    on the old server, remove it:\nDELETE FROM messages WHERE chat_id = 2;\n\n-- repeat for every chat and every table,\n-- while users keep chatting");
+  setQ('mg', '// once, when sharding is set up:\nsh.shardCollection("chat.messages", { "chat_id": 1 })\n\n// adding a server:\nsh.addShard("rs3/server-c:27017")\n\n// that is all: the balancer moves chunks in the\n// background, mongos learns the new map,\n// and the app code does not change');
+  setF(cap('rule in the app: chat_id % 3') + tbl('where each chat lives', ['server', 'chats'], [['A', '3, 6, 9'], ['B', '1, 4, 7'], ['C', '2, 5, 8']]),
+    cap('config servers: which shard holds which chunk') + json([{ shard: 'A', chats: [2, 4, 6] }, { shard: 'B', chats: [1, 3, 5] }, { shard: 'C', chats: [7, 8, 9] }]),
+    'SQL servers after this step', 'MongoDB shards after this step');
+}
+async function run9(ctx) {
+  say('Chats are split over <b>2 servers</b> by chat_id. Both are getting full, so we add a <b>third</b>.');
+  await Net.beat(ctx);
+
+  say('<b>SQL:</b> the app itself decides the server: <b>chat_id % 2</b>. With 3 servers the rule must become <b>chat_id % 3</b>, in your code.');
+  table('sC3', 810, LS, 'Server C (new)', 'empty', [], { compact: true, w: 190 });
+  Net.link('sA', 'sC3');
+  show('sA', '<code>server = chat_id <b style="color: var(--bad)">% 3</b></code>');
+  Net.flash('sA', 'bad');
+  await Net.beat(ctx);
+  say('With the new rule, <b>6 of the 9 chats</b> now belong on a different server. Your scripts must copy them over, table by table.', 'err');
+  await moveChats(ctx, MOVES_SQL);
+  setC('sC', 'Chats moved', 6, 'by your scripts');
+  Net.set('sC', { state: 'hot' });
+  await Net.beat(ctx);
+
+  say('<b>MongoDB:</b> one command, <b>sh.addShard</b>. The <b>balancer</b> sees an empty shard and moves just enough chunks to even things out.');
+  table('mC3', 810, LM, 'Shard C (new)', 'chunks', [], { compact: true, w: 190, kind: 'lb' });
+  Net.link('mA', 'mC3');
+  await moveChats(ctx, MOVES_MG);
+  setC('mC', 'Chats moved', 3, 'automatic');
+  Net.flash('mA', 'ok');
+  await Net.beat(ctx);
+
+  win('mC');
+  say('<b>MongoDB.</b> Sharding is built in: the balancer moves data and mongos routes to it, while the app code stays the same. In plain SQL, the splitting, the moving and the routing are all your job.', 'win');
+}
+
+// ================= Step 10: the primary server dies (failover) =================
+function cluster(p, top, kind) {
+  Net.node(p + 'P', { x: 420, y: top + 82, label: 'Server 1', sub: 'takes all writes', kind, w: 170, badge: 'PRIMARY', badgeCls: 'ok' });
+  Net.node(p + 'R1', { x: 320, y: top + 240, label: 'Server 2', sub: 'replica: a copy', kind, w: 160 });
+  Net.node(p + 'R2', { x: 520, y: top + 240, label: 'Server 3', sub: 'replica: a copy', kind, w: 160 });
+  Net.link(p + 'A', p + 'P');
+  Net.link(p + 'P', p + 'R1', { dashed: true });
+  Net.link(p + 'P', p + 'R2', { dashed: true });
+}
+function setup10() {
+  lanes('SQL: MySQL with classic replication', 'MongoDB: a replica set');
+  app('sA', 110, LS);
+  cluster('s', TS, 'db');
+  counter('sC', 860, LS, 'Writes failing for', 0, 's');
+  app('mA', 110, LM);
+  cluster('m', TM, 'lb');
+  counter('mC', 860, LM, 'Writes failing for', 0, 's');
+  setQ('sql', "-- the primary is down. Nothing happens on its own.\n-- someone (or a tool like Orchestrator) must:\n\n-- 1. on server 2: stop copying, become the primary\nSTOP REPLICA;\nRESET REPLICA ALL;\nSET GLOBAL read_only = OFF;\n\n-- 2. on server 3: copy from server 2 now\nCHANGE REPLICATION SOURCE TO SOURCE_HOST = 'server-2';\nSTART REPLICA;\n\n-- 3. point the app at server 2 and restart it");
+  setQ('mg', '// set up once:\nrs.initiate({\n  "_id": "rs0",\n  "members": [\n    { "_id": 0, "host": "server-1:27017" },\n    { "_id": 1, "host": "server-2:27017" },\n    { "_id": 2, "host": "server-3:27017" }\n  ]\n})\n\n// the app connects to the whole set, not one server:\n// mongodb://server-1,server-2,server-3/?replicaSet=rs0\n\n// primary dies → the others vote → new primary in ~10 s\nrs.status()   // shows who is PRIMARY now');
+  setF(tbl('who does what now', ['server', 'role'], [['server-1', 'down'], ['server-2', 'PRIMARY (promoted by hand)'], ['server-3', 'replica of server-2']]),
+    cap('rs.status(), shortened') + json([{ name: 'server-1:27017', stateStr: '(not reachable)' }, { name: 'server-2:27017', stateStr: 'PRIMARY' }, { name: 'server-3:27017', stateStr: 'SECONDARY' }]),
+    'SQL servers after this step', 'MongoDB replica set after this step');
+}
+async function run10(ctx) {
+  say('Each side has <b>3 servers</b>. Every write goes to the <b>primary</b>, which copies it to 2 <b>replicas</b>.');
+  await Promise.all([send('sA', 'sP', 'write'), send('mA', 'mP', 'write')]);
+  await Promise.all(['s', 'm'].flatMap(p => [send(p + 'P', p + 'R1', 'copy', 'teal', 800), send(p + 'P', p + 'R2', 'copy', 'teal', 800)]));
+  Net.check(ctx);
+  await Net.beat(ctx);
+
+  say('💥 At 2 a.m. the <b>primary crashes</b> on both sides. The replicas still have all the data.', 'err');
+  ['sP', 'mP'].forEach(id => Net.set(id, { state: 'down', badge: 'DOWN', badgeCls: 'bad', sub: 'not reachable' }));
+  await Promise.all([send('sA', 'sP', 'write', 'bad', 1000), send('mA', 'mP', 'write', 'bad', 1000)]);
+  show('sA', '<span style="color: var(--bad)">❌ message not sent</span>');
+  show('mA', '<span style="color: var(--bad)">❌ message not sent</span>');
+  await Net.beat(ctx);
+
+  say('<b>SQL (classic replication):</b> the replicas just wait. Nobody is in charge of picking a new primary, so <b>every message fails</b>.', 'err');
+  for (const t of ['10 s', '1 min', '3 min']) { await Net.wait(ctx, 700); setC('sC', 'Writes failing for', t); }
+  Net.set('sC', { state: 'hot' });
+  await Net.beat(ctx);
+  say('Someone gets woken up. They promote server 2 by hand, point server 3 at it, and change the app\'s address.');
+  Net.node('sE', { x: 730, y: TS + 240, label: '👩‍💻 On-call engineer', kind: 'client', w: 170 });
+  await Promise.all([send('sE', 'sR1', 'promote'), send('sE', 'sR2', 'follow server 2')]);
+  Net.set('sR1', { badge: 'PRIMARY', badgeCls: 'ok', sub: 'takes all writes' });
+  Net.unlink('sP', 'sR2');
+  Net.link('sR1', 'sR2', { dashed: true });
+  Net.link('sA', 'sR1');
+  await send('sA', 'sR1', 'write', 'ok');
+  show('sA', '✅ working again');
+  setC('sC', 'Writes failing for', '~5 min', 'a person had to act');
+  await Net.beat(ctx);
+
+  say('<b>MongoDB:</b> the members ping each other every 2 seconds. The primary stops answering, so the other two <b>hold a vote</b>.');
+  await Promise.all([send('mR1', 'mP', 'ping?', 'muted', 800), send('mR2', 'mP', 'ping?', 'muted', 800)]);
+  Net.link('mR1', 'mR2', { dashed: true });
+  await Promise.all([send('mR1', 'mR2', 'vote for me', 'teal', 800), send('mR2', 'mR1', 'yes', 'ok', 800)]);
+  Net.check(ctx);
+  Net.set('mR1', { badge: 'PRIMARY', badgeCls: 'ok', sub: 'elected, takes writes' });
+  Net.flash('mR1', 'ok');
+  Net.link('mA', 'mR1');
+  await send('mA', 'mR1', 'write', 'ok');
+  show('mA', '✅ working again');
+  setC('mC', 'Writes failing for', '~10 s', 'automatic');
+  await Net.beat(ctx);
+
+  win('mC');
+  say('<b>MongoDB.</b> Automatic failover is built into every replica set, and the driver finds the new primary by itself. MySQL can do it too (InnoDB Cluster), but that is extra setup; classic replication needs a person or a tool.', 'win');
+}
+
+// ================= Step 11: send money in chat (transactions) =================
+const walletDoc = (name, amt, s, note) => `<div class="dcard ${s || ''}"><div class="dh"><span>document "${name}"</span>${note ? `<span class="tag">${note}</span>` : ''}</div><div class="dt">wallet: ₹${amt}</div></div>`;
+function setup11() {
+  lanes('SQL: wallets table', 'MongoDB: one document per user');
+  app('sA', 110, LS);
+  table('wal', 480, LS, 'wallets table', 'user · balance', ['Rahul · ₹1000', 'Aman · ₹200'], { w: 280 });
+  counter('sC', 860, LS, 'Money lost', '₹0');
+  Net.link('sA', 'wal');
+  app('mA', 110, LM);
+  Net.node('usr', { x: 480, y: LM, label: 'users', sub: 'collection', kind: 'lb', w: 280, body: walletDoc('Rahul', 1000) + walletDoc('Aman', 200) });
+  counter('mC', 860, LM, 'Money lost', '₹0');
+  Net.link('mA', 'usr');
+  setQ('sql', "START TRANSACTION;\n\nUPDATE wallets SET balance = balance - 500 WHERE user = 'Rahul';\nUPDATE wallets SET balance = balance + 500 WHERE user = 'Aman';\n\nCOMMIT;\n-- crash before COMMIT: the database rolls back by itself");
+  setQ('mg', '// what most code does: two separate writes\ndb.users.updateOne({ "_id": "Rahul" }, { "$inc": { "wallet": -500 } })\n// 💥 crash here: Rahul lost ₹500, Aman never got it\ndb.users.updateOne({ "_id": "Aman" }, { "$inc": { "wallet": 500 } })\n\n// the safe way: a multi-document transaction\nconst session = db.getMongo().startSession()\nsession.startTransaction()\n// ... both updateOne calls, inside the session ...\nsession.commitTransaction()');
+  setF(cap('after the crash and the retry') + tbl('wallets', ['user', 'balance'], [['Rahul', 500], ['Aman', 700]]),
+    cap('after the crash, without a transaction: ₹500 is gone') + json([{ _id: 'Rahul', wallet: 500 }, { _id: 'Aman', wallet: 200 }]));
+}
+async function run11(ctx) {
+  show('sA', bubble('Send ₹500 to Aman'));
+  show('mA', bubble('Send ₹500 to Aman'));
+  say('Rahul sends Aman <b>₹500</b> inside the chat. Two balances must change <b>together</b>: Rahul −500, Aman +500.');
+  await Net.beat(ctx);
+
+  say('<b>SQL</b> wraps both changes in a <b>transaction</b>. First, Rahul −500.');
+  await send('sA', 'wal', 'START TRANSACTION', '', 900);
+  await send('sA', 'wal', 'UPDATE Rahul −500');
+  T.wal.rows[0] = { t: 'Rahul · ₹500 (not committed)', s: 'read' };
+  paintT('wal');
+  await Net.beat(ctx);
+  say('💥 The server <b>crashes</b> before Aman gets his ₹500.', 'err');
+  Net.set('wal', { state: 'down' });
+  await Net.wait(ctx, 1400);
+  Net.set('wal', { state: '' });
+  T.wal.rows[0] = { t: 'Rahul · ₹1000 (rolled back)', s: 'new' };
+  paintT('wal');
+  say('On restart, the database finds an <b>unfinished transaction</b> and <b>rolls it back</b> by itself. Rahul has his ₹1000 again.');
+  Net.set('sC', { state: 'win' });
+  await Net.beat(ctx);
+  say('The app retries: both updates, then <b>COMMIT</b>. They change together, or not at all.');
+  await send('sA', 'wal', 'UPDATE ×2 + COMMIT', 'ok');
+  T.wal.rows = [{ t: 'Rahul · ₹500', s: 'new' }, { t: 'Aman · ₹700', s: 'new' }];
+  paintT('wal');
+  show('sA', '✅ ₹500 sent');
+  await Net.beat(ctx);
+
+  say('<b>MongoDB</b>, written the usual way: <b>two separate updateOne</b> calls. The first one is saved straight away.');
+  await send('mA', 'usr', 'updateOne Rahul −500');
+  Net.set('usr', { body: walletDoc('Rahul', 500, 'new', 'saved') + walletDoc('Aman', 200) });
+  await Net.beat(ctx);
+  say('💥 The server <b>crashes</b> before the second update.', 'err');
+  Net.set('usr', { state: 'down' });
+  await Net.wait(ctx, 1400);
+  Net.set('usr', { state: '', body: walletDoc('Rahul', 500, 'bad', '−500') + walletDoc('Aman', 200, 'bad', 'never got it') });
+  say('On restart there is <b>nothing to undo</b>: the first write was already final. The ₹500 has <b>vanished</b>.', 'err');
+  setC('mC', 'Money lost', '₹500');
+  Net.set('mC', { state: 'hot' });
+  show('mA', '<span style="color: var(--bad)">❌ money gone</span>');
+  await Net.beat(ctx);
+
+  win('sC');
+  say('<b>SQL.</b> When several rows must change together, a transaction is the normal way to write SQL. MongoDB can do it too (a multi-document transaction), but you must remember to use one, and it costs more.', 'win');
+}
+
+// ================= Step 12: delete last year's messages (partitioning) =================
+const MONTHS = ['Aug', 'Sep', 'Oct', 'Aug', 'Oct', 'Sep', 'Aug', 'Sep', 'Oct', 'Aug', 'Oct', 'Sep'];
+const mixed = drop => '<div class="rxs">' + MONTHS.map(m => `<span class="re ${m === 'Aug' ? drop : ''}">${m} 2025</span>`).join('') + '</div><div class="none">3,000,000 documents, all months mixed together</div>';
+function setup12() {
+  lanes('SQL: messages partitioned by month', 'MongoDB: one messages collection');
+  app('sA', 110, TS + 100);
+  counter('sC', 110, TS + 250, 'Deleted one by one', 0);
+  [['p08', 'Aug'], ['p09', 'Sep'], ['p10', 'Oct']].forEach((p, i) =>
+    table(p[0], 400 + i * 200, LS, 'partition p2025_' + p[0].slice(1), 'its own file', ['1,000,000 messages', 'sent in ' + p[1] + ' 2025'], { w: 180 }));
+  ['p08', 'p09', 'p10'].forEach(id => Net.link('sA', id));
+  app('mA', 110, TM + 100);
+  counter('mC', 110, TM + 250, 'Deleted one by one', 0);
+  Net.node('col', { x: 600, y: LM, label: 'messages', sub: 'collection', kind: 'lb', w: 540, body: mixed('') });
+  Net.link('mA', 'col');
+  setQ('sql', "-- set up once: one partition per month\nCREATE TABLE messages (\n  id BIGINT, chat_id BIGINT, text TEXT, sent_at DATE\n)\nPARTITION BY RANGE COLUMNS (sent_at) (\n  PARTITION p2025_08 VALUES LESS THAN ('2025-09-01'),\n  PARTITION p2025_09 VALUES LESS THAN ('2025-10-01'),\n  PARTITION p2025_10 VALUES LESS THAN ('2025-11-01')\n);\n\n-- delete all of August: removes one file, instantly\nALTER TABLE messages DROP PARTITION p2025_08;");
+  setQ('mg', '// every month lives in the same collection\ndb.messages.deleteMany({\n  "sent_at": { "$lt": ISODate("2025-09-01") }\n})\n// finds and deletes 1,000,000 documents one by one,\n// updating every index each time\n\n// a TTL index deletes old documents automatically,\n// but still one by one, in the background:\ndb.messages.createIndex(\n  { "sent_at": 1 },\n  { "expireAfterSeconds": 31536000 }\n)');
+  setF(cap('p2025_08 is gone: one file deleted') + tbl('partitions of messages', ['partition', 'rows'], [['p2025_09', '1,000,000'], ['p2025_10', '1,000,000']]),
+    cap('collection: messages, after 1,000,000 deletes') + json({ collection: 'messages', documents: 2000000, months: ['Sep 2025', 'Oct 2025'] }));
+}
+async function run12(ctx) {
+  say('A new month starts. Messages older than a year must go: <b>all of August 2025</b>, a million of them.');
+  await Net.beat(ctx);
+
+  say('<b>SQL:</b> each month is its own <b>partition</b>, stored as a separate file. Drop the whole partition at once.');
+  await send('sA', 'p08', 'DROP PARTITION', 'amber');
+  markRows('p08', () => true, 'gone');
+  Net.set('p08', { state: 'down', badge: 'dropped', badgeCls: 'bad', sub: 'file deleted' });
+  setC('sC', 'Deleted one by one', 0, '1 file removed');
+  Net.set('sC', { state: 'win' });
+  say('Done <b>instantly</b>. No row-by-row work, and September and October were never touched.');
+  await Net.beat(ctx);
+
+  say('<b>MongoDB:</b> August is mixed in with every other month. <b>deleteMany</b> must find each document and delete it, one by one.');
+  await send('mA', 'col', 'deleteMany', 'amber');
+  Net.set('col', { body: mixed('wait') });
+  for (let k = 1; k <= 5; k++) {
+    await Net.wait(ctx, 650);
+    setC('mC', 'Deleted one by one', (k * 200000).toLocaleString('en-IN'));
+  }
+  Net.set('col', { body: mixed('drop') });
+  Net.set('mC', { state: 'hot' });
+  say('A million deletes, each one updating every index, while users keep chatting. The live app slows down.', 'err');
+  await Net.beat(ctx);
+
+  say('<b>SQL.</b> Partitioning lets you throw away a whole month as one file. Partitioning splits a table on <b>one</b> server; sharding splits it across <b>many</b>. They work together.', 'win');
+}
+
+// ================= Step 13: scoreboard =================
 const SCORE = [
   ['1', 'Send a message, a reaction comes later', 'insert + insert', 'insert + update (rewrite)', 'tie'],
   ['2', 'Read it back', '1 row per reaction, rebuilt', '1 document, ready', 'mg'],
@@ -658,21 +906,25 @@ const SCORE = [
   ['4b', 'Split across servers', 'copy chat_id into every table', 'together automatically', 'mg'],
   ['5', 'New feature: voice notes', 'new table on every server', 'just new fields', 'mg'],
   ['6', "Zoya's favourite emoji", 'only her rows', 'whole messages', 'sql'],
-  ['7', 'Zoya changes her name', '1 row', 'every message', 'sql']
+  ['7', 'Zoya changes her name', '1 row', 'every message', 'sql'],
+  ['9', 'Add a 3rd server', '6 of 9 chats moved by hand', '3 of 9 moved by the balancer', 'mg'],
+  ['10', 'The primary server dies', '~5 min, a person promotes a replica', '~10 s, automatic vote', 'mg'],
+  ['11', 'Send ₹500, crash halfway', 'transaction rolls back: ₹0 lost', '2 separate writes: ₹500 lost', 'sql'],
+  ['12', "Delete last year's August", 'DROP PARTITION: 1 file', '1,000,000 deletes', 'sql']
 ];
 const WIN = { mg: '<span class="w mg">MongoDB</span>', sql: '<span class="w sql">SQL</span>', tie: '<span class="w tie">tie</span>' };
 function boardHTML(shown, rule) {
   return '<table class="score"><tr><th>Step</th><th>What we did</th><th>SQL</th><th>MongoDB</th><th>Better</th></tr>'
     + SCORE.map((r, i) => `<tr class="${i < shown ? '' : 'hide'}"><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${WIN[r[4]]}</td></tr>`).join('')
-    + '</table>' + (rule ? '<div class="rule"><b>MongoDB wins</b> when you work with <b>one thing as a whole</b>: create it, read it, delete it, give it new fields.<br><b>SQL wins</b> when you ask <b>across many things</b>, when <b>many people write to one thing at once</b>, or when you change something <b>shared</b>.</div>' : '');
+    + '</table>' + (rule ? '<div class="rule"><b>MongoDB wins</b> when you work with <b>one thing as a whole</b>: create it, read it, delete it, give it new fields.<br><b>SQL wins</b> when you ask <b>across many things</b>, when <b>many people write to one thing at once</b>, or when you change something <b>shared</b>.<br><b>At scale:</b> MongoDB gives you sharding and failover <b>built in</b>; SQL gives you <b>transactions</b> and <b>partitioning</b> you can trust.</div>' : '');
 }
-function setup8() {
+function setup13() {
   Net.node('board', { x: 500, y: 338, label: 'Scoreboard', kind: 'server', w: 900, body: boardHTML(0, false) });
   setQ('sql', '');
   setQ('mg', '');
   setF('', '');
 }
-async function run8(ctx) {
+async function run13(ctx) {
   say('All the steps, one at a time.');
   for (let i = 1; i <= SCORE.length; i++) {
     await Net.wait(ctx, 800);
@@ -737,9 +989,35 @@ const QA = [
         'Copying shared data that changes is expensive.',
         'The fix in MongoDB: store only the user id in the message, just like SQL does.'],
     win: 'SQL' },
+  { q: 'Two servers are full and a third is added. Which chats have to move, and who does the moving?',
+    a: ['SQL sharded by hand: the <b>app</b> picks the server with chat_id % 2. Changing it to % 3 sends <b>6 of 9 chats</b> to a new home.',
+        'You write the copy scripts, run them table by table, and redeploy the app, while users keep chatting.',
+        'Consistent hashing (from our earlier class) would move only about a third, but you still build and run it yourself. Tools like Vitess do this for MySQL.',
+        'MongoDB: <b>sh.addShard</b>. The <b>balancer</b> moves just enough chunks (3 of 9) in the background, and <b>mongos</b> routes to the new place. The app does not change.'],
+    win: 'MongoDB' },
+  { q: 'The primary database server crashes at 2 a.m. How long can nobody send a message, and who fixes it?',
+    a: ['Both sides keep copies on replicas, so no data is lost. The question is <b>who promotes a replica</b>.',
+        'Classic MySQL replication: the replicas just wait. A person (or a tool like Orchestrator) promotes one and re-points the rest and the app: <b>minutes</b> of failed writes.',
+        'MongoDB replica set: members ping each other every 2 s, <b>vote</b>, and elect a new primary in about <b>10 s</b>. The driver finds it by itself.',
+        'Fair note: MySQL InnoDB Cluster (Group Replication) also fails over automatically, but it is extra setup. In MongoDB it is the default.'],
+    win: 'MongoDB' },
+  { q: 'Rahul sends ₹500 to Aman. The server crashes after taking Rahul\'s money but before giving it to Aman. Where did the ₹500 go?',
+    a: ['Two rows (or documents) must change <b>together or not at all</b>.',
+        'SQL: a transaction is the normal way to write this. A crash before COMMIT is <b>rolled back</b> by the database itself: ₹0 lost.',
+        'MongoDB: one document is always safe, but <b>two documents are not</b>. Two plain updateOne calls lose ₹500 on a crash.',
+        'MongoDB does have multi-document transactions, but you must opt in, they cost more (especially across shards), and MongoDB suggests modelling data so you rarely need them.',
+        'That is why payments, wallets and orders usually live in SQL.'],
+    win: 'SQL' },
+  { q: 'Every month the app deletes messages older than a year: a million at a time. Which database can throw them away in one go?',
+    a: ['SQL with <b>partitioning</b>: each month is its own partition, a separate file. DROP PARTITION removes the whole month <b>instantly</b>.',
+        'MongoDB: all months are mixed in one collection, so deleteMany deletes <b>1,000,000 documents one by one</b>, updating every index and slowing the live app.',
+        'A TTL index makes MongoDB delete old documents automatically, but still one by one in the background.',
+        'Partitioning splits a table on <b>one server</b>; sharding splits it across <b>many servers</b>. Big systems use both.'],
+    win: 'SQL' },
   { q: 'Looking at every step: when does MongoDB win, and when does SQL win?',
     a: ['MongoDB wins when you work with <b>one thing as a whole</b>: read it, create it, delete it, give it new fields, split it across servers.',
         'SQL wins when you ask <b>across many things</b> (Zoya\'s stats), change <b>shared data</b> (her name), or many people write to <b>one item</b> at once (viral).',
+        'At scale: MongoDB gives you <b>sharding</b> and <b>failover</b> built in. SQL gives you <b>transactions</b> (money!) and <b>partitioning</b>.',
         'Rule: store together what belongs to one thing and is used together. Keep shared data that changes in one place, and point to it.'],
     win: '' }
 ];
@@ -768,7 +1046,11 @@ Net.scenarios([
   { label: '5 New feature', story: '<b>Use case:</b> The app launches voice notes. Zoya sends a 12-second voice note.<span class="ask"><b>What the app asks the database:</b> Store a new kind of message that has a url and a duration.</span>', setup: setup5, run: run5 },
   { label: '6 Different angle', story: '<b>Use case:</b> Zoya opens her profile stats: <i>“Which emoji do you use most?”</i><span class="ask"><b>What the app asks the database:</b> Count Zoya\'s reactions by emoji, across every chat.</span>', setup: setup6, run: run6 },
   { label: '7 Rename a user', story: '<b>Use case:</b> Zoya changes her display name to Zoya Khan.<span class="ask"><b>What the app asks the database:</b> Show the new name on every message she has sent.</span>', setup: setup7, run: run7 },
-  { label: '8 Scoreboard', story: '<b>Use case:</b> All the steps side by side.<span class="ask"><b>What the app asks the database:</b> Which database did less work for each request?</span>', setup: setup8, run: run8 }
+  { label: '9 Add a server', story: '<b>Use case:</b> The app keeps growing. The 2 database servers are full, so a 3rd one is added.<span class="ask"><b>What the app asks the database:</b> Spread the chats over 3 servers now, and keep routing every message to the right one.</span>', setup: setup9, run: run9 },
+  { label: '10 A server dies', story: '<b>Use case:</b> At 2 a.m. the main database server crashes. People are still chatting.<span class="ask"><b>What the app asks the database:</b> Keep accepting messages, even though a server is gone.</span>', setup: setup10, run: run10 },
+  { label: '11 Send money', story: '<b>Use case:</b> The chat app has a wallet. Rahul sends Aman ₹500, and the server crashes halfway through.<span class="ask"><b>What the app asks the database:</b> Take ₹500 from Rahul and give it to Aman: both, or neither.</span>', setup: setup11, run: run11 },
+  { label: '12 Delete old data', story: '<b>Use case:</b> The app keeps messages for one year. Today, all of August 2025 (a million messages) must go.<span class="ask"><b>What the app asks the database:</b> Delete every message from August 2025, without slowing down the live chat.</span>', setup: setup12, run: run12 },
+  { label: '13 Scoreboard', story: '<b>Use case:</b> All the steps side by side.<span class="ask"><b>What the app asks the database:</b> Which database did less work for each request?</span>', setup: setup13, run: run13 }
 ], 'A chat app where every message can have reactions. Each step does the <b>same thing</b> in SQL (top) and MongoDB (bottom).');
 </script>
 </body>

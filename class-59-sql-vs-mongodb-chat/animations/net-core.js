@@ -74,10 +74,11 @@ const Net = (() => {
       + (o.badge ? `<span class="nd-badge ${o.badgeCls || ''}">${o.badge}</span>` : '');
   }
 
-  function set(id, patch) { Object.assign(nodes[id].o, patch); paint(id); drawLinks(); }
+  function set(id, patch) { if (!nodes[id]) return; Object.assign(nodes[id].o, patch); paint(id); drawLinks(); }
   const get = id => nodes[id].o;
 
   function flash(id, kind) {
+    if (!nodes[id]) return;
     const el = nodes[id].el;
     el.classList.remove('fl-ok', 'fl-bad');
     void el.offsetWidth;
@@ -103,6 +104,8 @@ const Net = (() => {
   // ---------- packets ----------
   // Moves a pill from one box to another. Resolves when it arrives (or at stopAt, 0..1, if it gets "lost" on the way).
   function send(from, to, o = {}) {
+    // a step that was switched away from can still try to send: just do nothing
+    if (!nodes[from] || !nodes[to]) return Promise.resolve(false);
     const A = nodes[from].o, B = nodes[to].o;
     return new Promise(resolve => {
       const el = document.createElement('div');

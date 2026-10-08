@@ -13,7 +13,12 @@ Step 4b Sharded by chat_id: where do reactions live?   SQL needs chat_id copied 
 Step 5  New feature: voice notes                       SQL new table / NULL columns on every shard  vs  Mongo new fields -> MongoDB
 Step 6  A different angle: Zoya's favourite emoji      SQL reads only her rows  vs  Mongo reads whole messages -> SQL
 Step 7  A user changes their name                      SQL 1 row  vs  Mongo every message (if the name was copied) -> SQL
-Step 8  Scoreboard + the rule
+Step 9  Add a 3rd server (resharding)                  SQL 6 of 9 chats moved by your scripts  vs  Mongo balancer moves 3, automatic -> MongoDB
+Step 10 The primary server dies (failover)             SQL someone promotes a replica (~minutes)  vs  Mongo replica set votes (~10 s) -> MongoDB
+Step 11 Send money in chat, crash halfway              SQL transaction rolls back  vs  Mongo 2 separate writes lose the money -> SQL
+Step 12 Delete last year's August (partitioning)       SQL DROP PARTITION (1 file)  vs  Mongo 1,000,000 deletes -> SQL
+Step 13 Scoreboard + the rule
 
 Rule: MongoDB wins when you work with one thing as a whole (a message).
       SQL wins when you ask across many things, or change something shared.
+      At scale: MongoDB has sharding and failover built in; SQL has transactions and partitioning.
