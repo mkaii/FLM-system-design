@@ -6,16 +6,20 @@
 <title>Redis Data Types</title>
 <link rel="stylesheet" href="net.css">
 <link rel="stylesheet" href="redis.css">
-<link rel="stylesheet" href="fancy.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>Redis: why we need it, then its data types</h1>
-    <nav class="pages">
-      <a class="on" href="datatypes.html">Animation</a>
-      <a href="commands.html">Commands</a>
-    </nav>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages">
+        <a class="on" href="datatypes.html">Animation</a>
+        <a href="commands.html">Commands</a>
+      </nav>
+      <button id="bTheme" type="button"></button>
+    </div>
   </header>
   <div class="box">
     <div class="row"><div class="row-t">Type</div><div class="row-c" id="scen"></div></div>
@@ -210,8 +214,8 @@ function markCur(k) { document.querySelectorAll('.tl').forEach((e, i) => e.class
 
 function setupType(T) {
   Net.group({ x: 340, y: 14, w: 650, h: 412, label: 'Redis server · every key lives in RAM' });
-  Net.node('cli', { x: 150, y: 220, label: '💻 redis-cli', kind: 'client', w: 250, body: '<div class="rep wait">waiting…</div>' });
-  Net.node('key', { x: 665, y: 224, label: '⚡ Keys in Redis', kind: 'lb', w: 560, body: T.view(T.init()) });
+  Net.node('cli', { x: 150, y: 220, label: 'redis-cli', kind: 'client', w: 250, body: '<div class="rep wait">waiting…</div>' });
+  Net.node('key', { x: 665, y: 224, label: 'Keys in Redis', kind: 'lb', w: 560, body: T.view(T.init()) });
   Net.link('cli', 'key');
   // the transcript and the final picture are worked out up front, so they are always visible
   const sim = T.init();
@@ -261,7 +265,7 @@ function sheetHTML(shown, rule) {
     + (rule ? '<div class="rule"><b>The rule:</b> choose the type by <b>how you will read the data</b>, not by how it looks.<br>One value → String · Fields of one thing → Hash · Newest first → List · Unique, then compare → Set · Ranked by a number → Sorted set.</div>' : '');
 }
 function setupSheet() {
-  Net.node('board', { x: 500, y: 220, label: '✨ Cheat sheet', kind: 'proxy', w: 920, body: sheetHTML(0, false) });
+  Net.node('board', { x: 500, y: 220, label: 'Cheat sheet', kind: 'proxy', w: 920, body: sheetHTML(0, false) });
   $('#final').classList.add('hidden');
 }
 async function runSheet(ctx) {
@@ -295,10 +299,10 @@ const dbBody = t => `<div class="rep">${t}</div>`;
 
 function whyLayout(redis, redisBody, dbText, c1, c2) {
   USERS.forEach((u, i) => Net.node('u' + i, { x: 90, y: 58 + i * 64, label: u, kind: 'client small', w: 100, body: '<div class="wt">—</div>' }));
-  Net.node('app', { x: 330, y: 220, label: '⚙️ App server', kind: 'proxy', w: 150 });
+  Net.node('app', { x: 330, y: 220, label: 'App server', kind: 'proxy', w: 150 });
   USERS.forEach((u, i) => Net.link('u' + i, 'app'));
-  if (redis) { Net.node('rd', { x: 625, y: 100, label: '⚡ Redis', sub: 'keys in RAM · about 1 ms', kind: 'lb', w: 250, body: redisBody }); Net.link('app', 'rd'); }
-  Net.node('db', { x: 625, y: 335, label: '🗄️ Database', sub: 'works from disk · 200 ms per query', kind: 'db', w: 250, body: dbBody(dbText) });
+  if (redis) { Net.node('rd', { x: 625, y: 100, label: 'Redis', sub: 'keys in RAM · about 1 ms', kind: 'lb', w: 250, body: redisBody }); Net.link('app', 'rd'); }
+  Net.node('db', { x: 625, y: 335, label: 'Database', sub: 'works from disk · 200 ms per query', kind: 'db', w: 250, body: dbBody(dbText) });
   Net.link('app', 'db');
   Net.node('c1', { x: 900, y: 150, label: c1, kind: 'count', w: 150, body: big(0) });
   Net.node('c2', { x: 900, y: 320, label: c2, kind: 'count', w: 150, body: big('–') });
@@ -503,6 +507,20 @@ Net.scenarios([
   story: '<b>Use case:</b> You have learned five types. Next week a new feature arrives.<span class="ask"><b>What you ask yourself:</b> Which type fits this job?</span>',
   setup: setupSheet, run: runSheet
 }]), 'Start with <b>A, B, C</b> to see why Redis exists. Then <b>1 to 5</b> show what it can store.');
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
 </script>
 </body>
 </html>

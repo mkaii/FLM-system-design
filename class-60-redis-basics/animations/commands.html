@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Redis Commands</title>
 <link rel="stylesheet" href="net.css">
-<link rel="stylesheet" href="fancy.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
 <style>
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
 .intro { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
@@ -43,10 +44,13 @@ table.cmds { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
 <div class="wrap">
   <header>
     <h1>Redis commands, type by type</h1>
-    <nav class="pages">
-      <a href="datatypes.html">Animation</a>
-      <a class="on" href="commands.html">Commands</a>
-    </nav>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages">
+        <a href="datatypes.html">Animation</a>
+        <a class="on" href="commands.html">Commands</a>
+      </nav>
+      <button id="bTheme" type="button"></button>
+    </div>
   </header>
   <div class="box">
     <div class="tabs" id="tabs"></div>
@@ -323,6 +327,20 @@ $('#table').onclick = e => {
 let start = 0;
 try { start = +(localStorage.getItem('redisTab') || 0); } catch (e) {}
 show(start < TABS.length ? start : 0);
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
 </script>
 </body>
 </html>
