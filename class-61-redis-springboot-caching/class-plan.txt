@@ -1,18 +1,39 @@
 Class 61: Redis + Spring Boot caching
 
+Project: product-cache/  (Spring Boot + MySQL + Redis, port 9001)
+Postman: product-cache.postman_collection.json  (run top to bottom)
+Before class: Redis Stack running in Docker, Redis Insight open on localhost:8001,
+              MySQL password filled in application.properties
+
+0. Setup (what is new compared to class 54)
+   - pom.xml: spring-boot-starter-data-redis, spring-boot-starter-cache
+   - application.properties: spring.data.redis.host / port, spring.cache.type=redis
+   - @EnableCaching on the main class
+
 1. The problem
-   - A slow API (database call that takes ~2 s)
+   - GET /products/1/no-cache: the database takes ~2 s (Thread.sleep pretends it is slow)
+   - Call it twice: 2 s every time
 
-2. Cache-aside
-   - Check Redis -> hit: return it
-   - Miss: read from the database, store in Redis, return
-   - Time the API without and with the cache
+2. Cache-aside by hand (RedisTemplate)
+   - GET /products/1/manual: look in Redis -> miss -> database -> SET product:1 ... 60 s
+   - Second call: a few ms, console says CACHE HIT
+   - Redis Insight: key product:1, value is JSON
+   - Serializer lesson (RedisConfig):
+       comment out the two serializer lines -> 500 "Cannot serialize"
+       add implements Serializable to Product -> key becomes \xac\xed...product:1,
+       GET product:1 returns (nil). Put the lines back.
 
-3. TTL
-   - Cached data expires after a set time
+3. The same with one annotation (@Cacheable)
+   - GET /products/1/cached: same 2 s -> few ms
+   - Key in Redis is product::1  (cache name + :: + id)
+   - Hit = the method body does not even run (no console line)
 
-4. Stale data
-   - Update the database -> cache still has the old value
-   - Fix: delete (evict) the cache entry on update
+4. TTL
+   - RedisCacheConfiguration: entryTtl 60 s
+   - Redis Insight: watch TTL count down, the key disappears by itself
 
-Setup: Redis running locally (Docker)
+5. Stale data
+   - PUT /products/1 with price 899
+   - @CacheEvict deletes product::1, redisTemplate.delete removes product:1
+   - Next GET: 2 s once (miss), with the new price 899
+   - Ask: what if we forgot @CacheEvict? -> old price for up to 60 s

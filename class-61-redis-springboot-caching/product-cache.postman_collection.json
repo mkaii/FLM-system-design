@@ -1,0 +1,55 @@
+{
+  "info": {
+    "name": "Class 61 - Redis caching",
+    "description": "Run top to bottom. Watch the response time (top right in Postman) and the app console (CACHE HIT / CACHE MISS / DATABASE).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Add product",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"id\": 1,\n  \"name\": \"Phone\",\n  \"price\": 999\n}" },
+        "url": { "raw": "http://localhost:9001/products", "protocol": "http", "host": ["localhost"], "port": "9001", "path": ["products"] }
+      }
+    },
+    {
+      "name": "2. No cache (always ~2 s)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:9001/products/1/no-cache", "protocol": "http", "host": ["localhost"], "port": "9001", "path": ["products", "1", "no-cache"] }
+      }
+    },
+    {
+      "name": "3. Manual cache with RedisTemplate (2 s, then ms)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:9001/products/1/manual", "protocol": "http", "host": ["localhost"], "port": "9001", "path": ["products", "1", "manual"] }
+      }
+    },
+    {
+      "name": "4. @Cacheable (2 s, then ms)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:9001/products/1/cached", "protocol": "http", "host": ["localhost"], "port": "9001", "path": ["products", "1", "cached"] }
+      }
+    },
+    {
+      "name": "5. Update price (evicts the cache)",
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Phone\",\n  \"price\": 899\n}" },
+        "url": { "raw": "http://localhost:9001/products/1", "protocol": "http", "host": ["localhost"], "port": "9001", "path": ["products", "1"] }
+      }
+    },
+    {
+      "name": "6. @Cacheable again (2 s, new price)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "http://localhost:9001/products/1/cached", "protocol": "http", "host": ["localhost"], "port": "9001", "path": ["products", "1", "cached"] }
+      }
+    }
+  ]
+}

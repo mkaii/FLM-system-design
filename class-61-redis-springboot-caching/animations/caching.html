@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring Boot Caching</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+<style>
+.logs { font: 11.5px/1.6 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; min-height: 56px; }
+.logs div { white-space: nowrap; }
+.logs .hit { color: var(--good); font-weight: 600; }
+.logs .miss { color: var(--muted); }
+.logs .db { color: var(--amber); }
+.logs .err { color: var(--bad); font-weight: 600; }
+.code { margin: 0; padding: 12px 14px; border-radius: 9px; font: 13px/1.55 "JetBrains Mono", ui-monospace, Menlo, monospace; white-space: pre; overflow-x: auto; background: #0f0f0f; border: 1px solid #3a3a3a; color: #d6d6d6; }
+.code .an { color: #ffffff; font-weight: 600; }
+.code .cm { color: #6e6e6e; }
+.ttl { font: 300 40px/1 Inter, sans-serif; text-align: center; margin: 6px 0 2px; }
+.score { font-size: 14px; }
+.score td { padding: 6px 10px; }
+.score th { padding: 4px 10px; }
+.rule { margin-top: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.5; }
+.bytes { font: 12px/1.4 "JetBrains Mono", monospace; color: var(--bad); word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Spring Boot + Redis caching</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="caching.html">Animation</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final">
+      <div><div class="qt" id="t1">Java code for this step</div><pre class="code" id="code"></pre></div>
+      <div><div class="qt t" id="t2">What Redis holds at the end</div><div id="endView"></div></div>
+    </div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(480, 1.1);
+
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 900 });
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+const big = (v, unit) => `<div class="big">${v}${unit ? `<small>${unit}</small>` : ''}</div>`;
+const JSON1 = '{"id":1,"name":"Phone","price":999.0}';
+const JSON2 = '{"id":1,"name":"Phone","price":899.0}';
+
+// ---------- a Redis key, drawn as a card ----------
+const card = (key, body, isNew, cls) =>
+  `<div class="kc ${isNew ? 'new' : ''} ${cls || ''}"><div class="kh"><code>${key}</code><span class="ty">string</span></div><div class="kb">${body}</div></div>`;
+const EMPTY = '<div class="none">no keys</div>';
+const jsonCard = (key, json, isNew, note) => card(key, `<pre>${esc(json)}</pre>` + (note ? `<div class="cap">${note}</div>` : ''), isNew);
+
+// ---------- the console of the Spring Boot app ----------
+let LOG = [];
+function log(text, cls) {
+  LOG.push(`<div class="${cls || ''}">${esc(text)}</div>`);
+  LOG = LOG.slice(-4);
+  Net.set('con', { body: `<div class="logs">${LOG.join('')}</div>` });
+}
+
+// ---------- the boxes every step starts from ----------
+// opts.proxy: put a "Spring proxy" in front of the service (for @Cacheable)
+function layout(opts) {
+  LOG = [];
+  Net.node('pm', { x: 90, y: 220, label: 'Postman', sub: 'GET /products/1', kind: 'client', w: 150 });
+  Net.node('ctl', { x: 255, y: 220, label: 'Controller', sub: 'ProductController', kind: 'proxy', w: 150 });
+  Net.link('pm', 'ctl');
+  if (opts.proxy) {
+    Net.node('px', { x: 435, y: 220, label: 'Spring proxy', sub: 'reads @Cacheable', kind: 'proxy', w: 170 });
+    Net.node('svc', { x: 435, y: 370, label: 'ProductService', sub: 'your method', kind: 'proxy', w: 170 });
+    Net.node('con', { x: 185, y: 380, label: 'App console', kind: 'client', w: 300, body: '<div class="logs"></div>' });
+    Net.link('ctl', 'px');
+    Net.link('px', 'svc');
+    Net.link('px', 'rd');
+  } else {
+    Net.node('svc', { x: 440, y: 220, label: 'ProductService', sub: opts.svcSub || 'getProduct(1)', kind: 'proxy', w: 180 });
+    Net.node('con', { x: 430, y: 378, label: 'App console', kind: 'client', w: 290, body: '<div class="logs"></div>' });
+    Net.link('ctl', 'svc');
+  }
+  Net.node('rd', { x: 700, y: 105, label: 'Redis', sub: 'in RAM · about 1 ms', kind: 'lb', w: 240, body: opts.redisBody || EMPTY });
+  Net.node('db', { x: 700, y: 335, label: 'MySQL', sub: 'products table · slow: 2 s', kind: 'db', w: 230, body: `<div class="rep">${opts.dbText || 'id 1 · Phone · 999'}</div>` });
+  if (!opts.proxy) Net.link('svc', 'rd');
+  Net.link('svc', 'db');
+  if (opts.c1) Net.node('c1', { x: 905, y: opts.c1y || 150, label: opts.c1, kind: 'count', w: 150, body: big('–') });
+  if (opts.c2) Net.node('c2', { x: 905, y: 310, label: opts.c2, kind: 'count', w: 150, body: big(0) });
+}
+const setC = (id, v, unit, state) => Net.set(id, { body: big(v, unit), state: state || '' });
+const dbBusy = t => Net.set('db', { body: `<div class="rep">${t}</div>` });
+
+// a slow database read: the service asks, MySQL works for "2 s", the row comes back
+async function dbRead(ctx, from, row, dbCalls) {
+  log('DATABASE   -> reading product 1 (takes 2 s)', 'db');
+  await send(from, 'db', 'SELECT … WHERE id = 1', 'amber');
+  dbBusy('working… 2 s');
+  if (dbCalls !== undefined) setC('c2', dbCalls);
+  await wait(ctx, 1600);
+  dbBusy(row || 'id 1 · Phone · 999');
+  await send('db', from, 'row', 'ok');
+}
+async function reply(ctx, from, time, state) {
+  if (from !== 'ctl') await send(from, 'ctl', 'Product', 'ok', 700);
+  await send('ctl', 'pm', '200 OK', 'ok', 700);
+  setC('c1', time, '', state);
+}
+
+// ---------- the code panel ----------
+const C = (cls, t) => `<span class="${cls}">${esc(t)}</span>`;
+function setPanel(code, right, t2) {
+  $('#code').innerHTML = code;
+  $('#endView').innerHTML = right;
+  $('#t2').textContent = t2 || 'What Redis holds at the end';
+  $('#final').classList.remove('hidden');
+}
+
+// ================= Step 1: no cache =================
+function setup1() {
+  layout({ c1: 'Response time', c2: 'DB calls', svcSub: 'getProductNoCache(1)' });
+  setPanel(
+    C('an', '@GetMapping("/products/{id}/no-cache")') + '\n'
+    + 'public Product getProductNoCache(@PathVariable Long id) {\n'
+    + '    return productService.getProductNoCache(id);\n}\n\n'
+    + C('cm', '// ProductService') + '\n'
+    + 'public Product getProductNoCache(Long id) {\n'
+    + '    return readFromDatabase(id);   ' + C('cm', '// Thread.sleep(2000) + SELECT') + '\n}',
+    EMPTY + '<div class="none">Redis is not used yet</div>');
+}
+async function run1(ctx) {
+  say('Postman asks for <b>product 1</b>. No cache yet: every request goes all the way to MySQL.');
+  await Net.beat(ctx);
+  for (let n = 1; n <= 2; n++) {
+    say(n === 1 ? '<b>Call 1:</b> Postman → Controller → Service → <b>MySQL</b>, which takes 2 seconds.' : '<b>Call 2</b>, same product, a second later: the <b>same 2-second trip</b> again.');
+    await send('pm', 'ctl', 'GET /products/1');
+    await send('ctl', 'svc', 'getProductNoCache(1)');
+    Net.check(ctx);
+    await dbRead(ctx, 'svc', null, n);
+    await reply(ctx, 'svc', '2.02 s', n === 2 ? 'hot' : '');
+    dbBusy('id 1 · Phone · 999');
+    await Net.beat(ctx);
+  }
+  say('<b>The problem:</b> nothing changed, yet every call paid 2 seconds and hit the database again. 10,000 users = 10,000 slow queries.', 'err');
+}
+
+// ================= Step 2: cache-aside by hand =================
+function setup2() {
+  layout({ c1: 'Response time', c2: 'DB calls', svcSub: 'getProductManual(1)' });
+  setPanel(
+    'public Product getProductManual(Long id) {\n'
+    + '    String key = "product:" + id;\n\n'
+    + '    ' + C('cm', '// 1. look in Redis first') + '\n'
+    + '    Product cached = (Product) ' + C('an', 'redisTemplate.opsForValue().get(key)') + ';\n'
+    + '    if (cached != null) {\n'
+    + '        return cached;                        ' + C('cm', '// HIT') + '\n'
+    + '    }\n\n'
+    + '    ' + C('cm', '// 2. MISS: ask the database') + '\n'
+    + '    Product product = readFromDatabase(id);\n\n'
+    + '    ' + C('cm', '// 3. keep a copy for 60 s  (SET product:1 ... EX 60)') + '\n'
+    + '    ' + C('an', 'redisTemplate.opsForValue().set(key, product, Duration.ofSeconds(60))') + ';\n'
+    + '    return product;\n}',
+    jsonCard('product:1', JSON1, false, 'deletes itself after 60 seconds'));
+}
+async function run2(ctx) {
+  say('Same request, but now the service <b>looks in Redis first</b>. This is called <b>cache-aside</b>.');
+  await Net.beat(ctx);
+  say('<b>Call 1:</b> the service asks Redis for <b>product:1</b>…');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'svc', 'getProductManual(1)');
+  await send('svc', 'rd', 'GET product:1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'svc', '(nil)', 'muted', 700);
+  log('CACHE MISS -> product:1', 'miss');
+  say('Redis has <b>nothing</b>: a <b>miss</b>. So the service asks MySQL, once.');
+  await dbRead(ctx, 'svc', null, 1);
+  say('Before answering, it <b>keeps a copy in Redis</b> for 60 seconds.');
+  await send('svc', 'rd', 'SET product:1 … EX 60', 'teal');
+  Net.set('rd', { body: jsonCard('product:1', JSON1, true), badge: 'TTL 60 s' });
+  Net.flash('rd', 'ok');
+  await reply(ctx, 'svc', '2.19 s');
+  await Net.beat(ctx);
+
+  say('<b>Call 2:</b> Redis <b>has it</b>: a <b>hit</b>. MySQL is not touched.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'svc', 'getProductManual(1)');
+  await send('svc', 'rd', 'GET product:1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'svc', 'JSON', 'ok', 700);
+  log('CACHE HIT  -> product:1', 'hit');
+  Net.set('db', { state: 'down' });
+  await reply(ctx, 'svc', '0.011 s', 'good');
+  Net.set('c2', { state: 'good' });
+  await Net.beat(ctx);
+  say('<b>2.19 s → 0.011 s</b>, measured on the demo project. DB calls stayed at <b>1</b>.', 'win');
+}
+
+// ================= Step 3: serializers =================
+const UGLY = card('\\xac\\xed\\x00\\x05t\\x00\\tproduct:1', '<div class="bytes">\\xac\\xed\\x00\\x05sr\\x00\\x1fcom.mainak.productcache.Product…</div><div class="cap">Java-serialized bytes: only Java can read them</div>', true);
+function setup3() {
+  layout({ c1: 'Response', c1y: 310, svcSub: 'getProductManual(1)' });
+  Net.node('ins', { x: 905, y: 110, label: 'Redis Insight', sub: 'what you see', kind: 'client', w: 150 });
+  Net.link('ins', 'rd', { dashed: true });
+  setPanel(
+    C('cm', '// RedisConfig') + '\n'
+    + C('an', '@Bean') + '\n'
+    + 'public RedisTemplate&lt;String, Object&gt; redisTemplate(RedisConnectionFactory connectionFactory) {\n'
+    + '    RedisTemplate&lt;String, Object&gt; template = new RedisTemplate&lt;&gt;();\n'
+    + '    template.setConnectionFactory(connectionFactory);\n\n'
+    + '    ' + C('an', 'template.setKeySerializer(RedisSerializer.string());') + '   ' + C('cm', '// key   -> product:1') + '\n'
+    + '    ' + C('an', 'template.setValueSerializer(RedisSerializer.json());') + '   ' + C('cm', '// value -> JSON') + '\n\n'
+    + '    return template;\n}',
+    jsonCard('product:1', JSON1, false, 'readable key, readable JSON'));
+}
+async function run3(ctx) {
+  say('Java objects live in memory. Redis stores <b>bytes</b>. Something must turn a Product into bytes: a <b>serializer</b>.');
+  await Net.beat(ctx);
+
+  say('<b>Try 1: no serializer lines.</b> RedisTemplate falls back to <b>Java serialization</b>, and Product is not Serializable.', 'err');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'svc', 'getProductManual(1)');
+  await send('svc', 'rd', 'SET product:1', 'bad');
+  Net.check(ctx);
+  log('SerializationException: Cannot serialize', 'err');
+  Net.flash('rd', 'bad');
+  await send('ctl', 'pm', '500 error', 'bad', 700);
+  setC('c1', '500', 'error', 'hot');
+  await Net.beat(ctx);
+
+  say('<b>Try 2:</b> add <b>implements Serializable</b> to Product. It works, but look at what Redis stores.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'svc', 'getProductManual(1)');
+  await send('svc', 'rd', 'SET (Java bytes)', 'amber');
+  Net.check(ctx);
+  Net.set('rd', { body: UGLY });
+  setC('c1', '200', 'OK');
+  await Net.beat(ctx);
+  say('In Redis Insight, <b>GET product:1</b> finds <b>nothing</b>: the real key is <b>\\xac\\xed…product:1</b>.', 'err');
+  await send('ins', 'rd', 'GET product:1', 'muted');
+  await send('rd', 'ins', '(nil)', 'bad', 700);
+  Net.set('ins', { sub: '(nil): key not found', state: 'hot' });
+  await Net.beat(ctx);
+
+  say('<b>Try 3:</b> put the two serializer lines back: <b>string()</b> for keys, <b>json()</b> for values.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'svc', 'getProductManual(1)');
+  await send('svc', 'rd', 'SET product:1 (JSON)', 'teal');
+  Net.check(ctx);
+  Net.set('rd', { body: jsonCard('product:1', JSON1, true) });
+  await send('ins', 'rd', 'GET product:1', 'muted');
+  await send('rd', 'ins', 'JSON', 'ok', 700);
+  Net.set('ins', { sub: 'readable JSON', state: '' });
+  Net.flash('ins', 'ok');
+  await Net.beat(ctx);
+  say('Readable key, readable JSON. Any tool, or an app in another language, can read it now.', 'win');
+}
+
+// ================= Step 4: @Cacheable =================
+function setup4() {
+  layout({ proxy: true, c1: 'Response time', c2: 'DB calls' });
+  setPanel(
+    C('cm', '// main class') + '\n' + C('an', '@EnableCaching') + '\npublic class ProductCacheApplication { ... }\n\n'
+    + C('cm', '// ProductService: the whole if/else is gone') + '\n'
+    + C('an', '@Cacheable(cacheNames = "product", key = "#id")') + '\n'
+    + 'public Product getProductCached(Long id) {\n'
+    + '    return readFromDatabase(id);   ' + C('cm', '// runs only on a MISS') + '\n}\n\n'
+    + C('cm', '// RedisConfig: JSON values + 60 s for every cached entry') + '\n'
+    + C('an', '@Bean') + '\npublic RedisCacheConfiguration cacheConfiguration() {\n'
+    + '    RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig();\n'
+    + '    config = config.entryTtl(Duration.ofSeconds(60));\n'
+    + '    config = config.serializeValuesWith(\n'
+    + '            RedisSerializationContext.SerializationPair.fromSerializer(RedisSerializer.json()));\n'
+    + '    return config;\n}',
+    jsonCard('product::1', JSON1, false, 'cache name + :: + id'));
+}
+async function run4(ctx) {
+  say('Writing that if/else in every method gets old. With <b>@Cacheable</b>, Spring puts a <b>proxy</b> in front of your service that does it for you.');
+  await Net.beat(ctx);
+  say('<b>Call 1:</b> the proxy checks Redis for <b>product::1</b> before your method runs.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'px', 'getProductCached(1)');
+  await send('px', 'rd', 'GET product::1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'px', '(nil)', 'muted', 700);
+  say('A miss, so the proxy <b>lets your method run</b>. It reads MySQL.');
+  await send('px', 'svc', 'run the method');
+  log('CACHE MISS -> product::1  (method body runs)', 'miss');
+  await dbRead(ctx, 'svc', null, 1);
+  await send('svc', 'px', 'Product', 'ok', 700);
+  say('The proxy <b>stores the result</b> in Redis by itself. No SET in your code.');
+  await send('px', 'rd', 'SET product::1', 'teal');
+  Net.set('rd', { body: jsonCard('product::1', JSON1, true), badge: 'TTL 60 s' });
+  Net.flash('rd', 'ok');
+  await reply(ctx, 'px', '2.06 s');
+  await Net.beat(ctx);
+
+  say('<b>Call 2:</b> a hit. The proxy answers from Redis and your method <b>does not run at all</b>: no console line.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'px', 'getProductCached(1)');
+  await send('px', 'rd', 'GET product::1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'px', 'JSON', 'ok', 700);
+  Net.set('svc', { state: 'down', badge: 'not called' });
+  Net.set('db', { state: 'down' });
+  await reply(ctx, 'px', '0.003 s', 'good');
+  Net.set('c2', { state: 'good' });
+  await Net.beat(ctx);
+  say('<b>2.06 s → 0.003 s</b> with one annotation. The key is <b>product::1</b>: cache name, two colons, id.', 'win');
+}
+
+// ================= Step 5: TTL =================
+function setup5() {
+  layout({ proxy: true, c1: 'Response time', c2: 'DB calls', redisBody: jsonCard('product::1', JSON1, false) });
+  Net.set('rd', { badge: 'TTL 60 s' });
+  setPanel(
+    C('cm', '// RedisConfig') + '\n'
+    + 'config = config.' + C('an', 'entryTtl(Duration.ofSeconds(60))') + ';\n\n'
+    + C('cm', '// what you can type in Redis Insight while it counts down:') + '\n'
+    + 'TTL product::1      ' + C('cm', '→ (integer) 60, 59, 58 …') + '\n'
+    + 'TTL product::1      ' + C('cm', '→ (integer) -2   (gone)') + '\n'
+    + 'GET product::1      ' + C('cm', '→ (nil)'),
+    EMPTY + '<div class="none">product::1 expired; the next GET caches it again</div>');
+}
+async function run5(ctx) {
+  say('product::1 is in Redis with a <b>60-second lifetime</b> (entryTtl). Watch the clock.');
+  await Net.beat(ctx);
+  for (let t = 60; t >= 0; t -= 5) {
+    Net.set('rd', { body: card('product::1', `<div class="ttl">${t}</div><div class="cap">seconds left (TTL)</div>`, false), badge: 'TTL ' + t + ' s' });
+    await wait(ctx, 260);
+  }
+  Net.set('rd', { body: EMPTY, badge: 'expired' });
+  Net.flash('rd', 'bad');
+  say('At <b>0</b>, Redis <b>deletes the key by itself</b>. Nobody wrote any delete code.');
+  await Net.beat(ctx);
+  say('The next request is a <b>miss</b> again: 2 s once, and fresh data goes back into Redis for another 60 s.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'px', 'getProductCached(1)');
+  await send('px', 'rd', 'GET product::1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'px', '(nil)', 'muted', 700);
+  await send('px', 'svc', 'run the method');
+  log('CACHE MISS -> product::1  (method body runs)', 'miss');
+  await dbRead(ctx, 'svc', null, 1);
+  await send('svc', 'px', 'Product', 'ok', 700);
+  await send('px', 'rd', 'SET product::1', 'teal');
+  Net.set('rd', { body: jsonCard('product::1', JSON1, true), badge: 'TTL 60 s' });
+  await reply(ctx, 'px', '2.02 s');
+  await Net.beat(ctx);
+  say('<b>TTL is the safety net:</b> a cached copy can never be older than 60 seconds.', 'win');
+}
+
+// ================= Step 6: stale data and @CacheEvict =================
+function setup6() {
+  layout({ proxy: true, c1: 'Response', c2: 'Wrong prices', redisBody: jsonCard('product::1', JSON1, false) });
+  setPanel(
+    C('an', '@CacheEvict(cacheNames = "product", key = "#id")') + '   ' + C('cm', '// deletes product::1') + '\n'
+    + 'public Product updateProduct(Long id, Product product) {\n'
+    + '    product.setId(id);\n'
+    + '    Product saved = productRepository.save(product);\n\n'
+    + '    ' + C('an', 'redisTemplate.delete("product:" + id);') + '   ' + C('cm', '// manual cache: by hand') + '\n'
+    + '    return saved;\n}',
+    jsonCard('product::1', JSON2, false, 'the new price, cached again after the update'));
+}
+async function run6(ctx) {
+  say('Redis holds product 1 at <b>999</b>. Now the shop drops the price to <b>899</b>.');
+  await Net.beat(ctx);
+  say('<b>Without @CacheEvict:</b> PUT updates MySQL. Redis is never told.', 'err');
+  await send('pm', 'ctl', 'PUT price 899');
+  await send('ctl', 'px', 'updateProduct(1)');
+  await send('px', 'svc', 'run the method');
+  await send('svc', 'db', 'UPDATE price = 899', 'amber');
+  Net.check(ctx);
+  dbBusy('id 1 · Phone · <b>899</b>');
+  Net.flash('db', 'ok');
+  await Net.beat(ctx);
+  say('Next GET: a <b>hit</b>, with the <b>old price 999</b>. It stays wrong until the TTL runs out.', 'err');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'px', 'getProductCached(1)');
+  await send('px', 'rd', 'GET product::1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'px', '999', 'bad', 700);
+  await reply(ctx, 'px', '999', 'hot');
+  Net.set('c1', { label: 'Price shown' });
+  setC('c2', 1, '', 'hot');
+  await Net.beat(ctx);
+
+  say('<b>With @CacheEvict</b> on the update method: Spring deletes <b>product::1</b> as soon as the price changes.');
+  await send('pm', 'ctl', 'PUT price 899');
+  await send('ctl', 'px', 'updateProduct(1)');
+  await send('px', 'svc', 'run the method');
+  await send('svc', 'db', 'UPDATE price = 899', 'amber');
+  Net.check(ctx);
+  await send('px', 'rd', 'DEL product::1', 'teal');
+  Net.set('rd', { body: EMPTY });
+  log('UPDATED    -> cache entries for product 1 deleted', 'hit');
+  await Net.beat(ctx);
+  say('Next GET: a <b>miss</b>, so it reads <b>899</b> from MySQL and caches the new price.');
+  await send('pm', 'ctl', 'GET /products/1');
+  await send('ctl', 'px', 'getProductCached(1)');
+  await send('px', 'rd', 'GET product::1', 'teal');
+  Net.check(ctx);
+  await send('rd', 'px', '(nil)', 'muted', 700);
+  await send('px', 'svc', 'run the method');
+  await dbRead(ctx, 'svc', 'id 1 · Phone · 899');
+  await send('svc', 'px', 'Product', 'ok', 700);
+  await send('px', 'rd', 'SET product::1', 'teal');
+  Net.set('rd', { body: jsonCard('product::1', JSON2, true), badge: 'TTL 60 s' });
+  await reply(ctx, 'px', '899', 'good');
+  await Net.beat(ctx);
+  say('<b>Rule:</b> whenever the data changes, delete its cache entry. TTL only limits how long a mistake lasts.', 'win');
+}
+
+// ================= Step 7: cheat sheet =================
+const SHEET = [
+  ['pom.xml', 'spring-boot-starter-data-redis, spring-boot-starter-cache', 'Redis client + caching annotations'],
+  ['application.properties', 'spring.data.redis.host / port, spring.cache.type=redis', 'where Redis is'],
+  ['@EnableCaching', 'the main class', 'switches caching on'],
+  ['RedisTemplate', 'opsForValue().get / set / delete', 'GET / SET / DEL by hand'],
+  ['Serializers', 'RedisSerializer.string() / json()', 'readable keys, JSON values'],
+  ['@Cacheable', 'a read method', 'hit: skip the method · miss: run it and store'],
+  ['@CacheEvict', 'an update or delete method', 'delete the cached entry'],
+  ['entryTtl', 'RedisCacheConfiguration', 'every entry expires by itself']
+];
+function sheetHTML(shown, rule) {
+  return '<table class="score"><tr><th>Piece</th><th>Where</th><th>What it does</th></tr>'
+    + SHEET.map((r, i) => `<tr class="${i < shown ? '' : 'hide'}"><td>${r[0]}</td><td><code>${r[1]}</code></td><td>${r[2]}</td></tr>`).join('')
+    + '</table>'
+    + (rule ? '<div class="rule"><b>The flow:</b> GET → look in Redis → hit: return · miss: read MySQL, store with a TTL, return.<br><b>On every update:</b> evict the entry, or users see old data until the TTL runs out.</div>' : '');
+}
+function setup7() {
+  Net.node('board', { x: 500, y: 240, label: 'Cheat sheet', kind: 'proxy', w: 920, body: sheetHTML(0, false) });
+  $('#final').classList.add('hidden');
+}
+async function run7(ctx) {
+  say('Everything from today, in one table.');
+  for (let i = 1; i <= SHEET.length; i++) {
+    await wait(ctx, 700);
+    Net.set('board', { body: sheetHTML(i, false) });
+  }
+  await Net.beat(ctx, 1500);
+  Net.set('board', { body: sheetHTML(SHEET.length, true) });
+  say('<b>Cache reads, evict on writes, and always set a TTL.</b>', 'win');
+}
+
+// ---------- the question before each step, and the answer after it ----------
+const QA = [
+  { q: 'Product 1 has not changed since the last call. Why does every request still wait 2 seconds?',
+    a: ['Every GET goes Controller → Service → <b>MySQL</b>, every single time.',
+        'The database reads from disk (here we pretend it is busy with Thread.sleep: 2 s).',
+        'Same question, same answer, paid for again and again. With 10,000 users the database becomes the bottleneck.',
+        'Fix: after the first read, keep the answer somewhere fast: <b>Redis</b>.'] },
+  { q: 'After the first slow call, where should the answer go so that the second call is fast?',
+    a: ['<b>Cache-aside:</b> look in Redis first. Found = a <b>hit</b>, return it.',
+        'Not found = a <b>miss</b>: read MySQL, <b>SET</b> it in Redis with a 60 s expiry, then return it.',
+        'Call 2 took <b>0.011 s</b> instead of 2.19 s, and MySQL was not touched.',
+        '<b>redisTemplate.opsForValue()</b> is the Java version of GET and SET from class 60.'],
+    best: 'learning what caching really does; custom keys; counters', not: 'copying the same if/else into every method' },
+  { q: 'Java objects live in memory and Redis stores bytes. Who turns a Product into bytes, and what do they look like?',
+    a: ['A <b>serializer</b> turns the object into bytes and back. RedisTemplate needs one for the key and one for the value.',
+        'No serializer set → <b>Java serialization</b>: the class must implement Serializable, otherwise <b>500 "Cannot serialize"</b>.',
+        'With Serializable it works, but the key becomes <b>\\xac\\xed…product:1</b>, so GET product:1 in Redis Insight returns (nil).',
+        '<b>RedisSerializer.string()</b> for keys and <b>RedisSerializer.json()</b> for values: readable keys, JSON any client can read.'] },
+  { q: 'Writing "look in Redis, else MySQL, then SET" in every method gets boring. Can Spring do it for you?',
+    a: ['<b>@Cacheable(cacheNames = "product", key = "#id")</b> does the whole cache-aside for you.',
+        'Spring wraps your service in a <b>proxy</b>. On a hit, the proxy answers from Redis and your method <b>does not run</b>.',
+        'The key is the cache name, two colons, and the id: <b>product::1</b>.',
+        '<b>@EnableCaching</b> switches it on; <b>RedisCacheConfiguration</b> sets JSON values and the TTL for every entry.'],
+    best: 'read methods for data that rarely changes', not: 'calling the method from inside the same class (this.getProductCached skips the proxy, so nothing is cached)' },
+  { q: 'If nobody ever deletes product::1, how long does Redis keep it?',
+    a: ['Forever, unless it has an expiry. RAM is limited and data changes.',
+        '<b>entryTtl(60 s):</b> every cached entry deletes itself 60 seconds after it was written.',
+        '<b>TTL product::1</b> shows the seconds left; at 0 the key is gone, and the next call is a miss that caches fresh data.',
+        'Short TTL = fresher data, more DB calls. Long TTL = fewer DB calls, older data.'] },
+  { q: 'The price drops to 899 in MySQL, but Redis still holds 999. What does the next GET show?',
+    a: ['Without eviction: the <b>old price 999</b>, until the TTL runs out. That is <b>stale data</b>.',
+        '<b>@CacheEvict(cacheNames = "product", key = "#id")</b> on the update method deletes product::1 when the price changes.',
+        'The next GET is a miss: it reads 899 from MySQL and caches the new value.',
+        'The manual cache needs <b>redisTemplate.delete("product:1")</b> by hand.'],
+    best: 'evict on every update, with a TTL as the safety net', not: 'updating the database and forgetting the cache' },
+  { q: 'What does each piece of Spring + Redis caching do?',
+    a: ['Two dependencies and two properties connect Spring Boot to Redis.',
+        '<b>RedisTemplate</b> = GET / SET by hand. <b>@Cacheable</b> = the same, done by a proxy.',
+        'Serializers decide what the bytes look like: always string keys and JSON values.',
+        'Cache reads, <b>evict on writes</b>, and always set a <b>TTL</b>.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  const qa = QA[i];
+  $('#ansList').innerHTML = qa.a.map(t => `<li>${t}</li>`).join('')
+    + (qa.best ? `<li class="best"><span>Best for</span>${qa.best}</li>` : '')
+    + (qa.not ? `<li class="not"><span>Watch out</span>${qa.not}</li>` : '');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const ASK = '<span class="ask"><b>What the app asks:</b> ';
+Net.scenarios([
+  { label: '1 No cache', story: '<b>Use case:</b> A product page is opened again and again. The product has not changed.' + ASK + 'GET /products/1, and do not make the user wait.</span>', setup: setup1, run: run1 },
+  { label: '2 RedisTemplate', story: '<b>Use case:</b> The same request, but the service now keeps answers in Redis.' + ASK + 'Look in Redis first; only on a miss, read MySQL and store the answer.</span>', setup: setup2, run: run2 },
+  { label: '3 Serializers', story: '<b>Use case:</b> We open Redis Insight to look at what our app stored.' + ASK + 'Store product 1 so that a human (and any other app) can read it.</span>', setup: setup3, run: run3 },
+  { label: '4 @Cacheable', story: '<b>Use case:</b> The same caching, without writing the if/else ourselves.' + ASK + 'Cache the result of getProductCached(1) automatically.</span>', setup: setup4, run: run4 },
+  { label: '5 TTL', story: '<b>Use case:</b> product::1 has been sitting in Redis for a while.' + ASK + 'Throw cached copies away after 60 seconds, without any delete code.</span>', setup: setup5, run: run5 },
+  { label: '6 Stale data', story: '<b>Use case:</b> The shop drops the price of product 1 from 999 to 899.' + ASK + 'Make sure the next GET shows 899, not the old cached 999.</span>', setup: setup6, run: run6 },
+  { label: '7 Cheat sheet', story: '<b>Use case:</b> Everything from today, side by side.' + ASK + 'Which piece does what?</span>', setup: setup7, run: run7 }
+], 'One product API, made fast with Redis, step by step.');
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>
