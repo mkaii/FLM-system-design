@@ -1,0 +1,165 @@
+/* Mono theme: near-black, white and greys only, small monospace labels, thin dotted lines.
+   The thing that matters right now is white; everything else steps back into grey. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root, :root:not([data-theme="light"]) {
+  --bg: #0b0b0b; --panel: #161616; --ink: #ededed; --muted: #8c8c8c; --line: #333333; --soft: #1b1b1b; --cell: #1f1f1f;
+  --dim: #555555; --white: #ffffff;
+  --teal: #ededed; --teal-bg: #141414; --teal-ink: #ffffff;
+  --purple: #ededed; --purple-bg: #141414; --purple-ink: #ffffff;
+  --amber: #a0a0a0; --amber-bg: #161616; --amber-ink: #ededed;
+  --good: #ffffff; --good-bg: #1a1a1a;
+  --bad: #e5675f; --bad-bg: #1a1414;
+  --edge: #484848;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; font-weight: 400; -webkit-font-smoothing: antialiased; }
+code, pre, .cmd, .rep, .term, .tl, .kh code { font-family: var(--mono) !important; }
+h1 { font-weight: 400; letter-spacing: -.02em; color: var(--white); }
+
+/* ---------- frame ---------- */
+.box { background: #0e0e0e; border: 1px solid #3a3a3a; border-radius: 14px; box-shadow: 0 0 0 1px #000, 0 20px 60px rgba(0, 0, 0, .6); }
+.row { background: transparent; border-bottom-color: var(--line); }
+.row-t { font-family: var(--mono); font-weight: 400; text-transform: lowercase; letter-spacing: .04em; color: var(--muted); }
+.pages { background: transparent; border-color: var(--line); }
+.pages a { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.pages a.on { background: var(--white); color: #000; }
+
+button, html .tabs button { background: #141414; border: 1px solid #444444; color: var(--muted); border-radius: 999px; font-family: var(--mono); font-size: 12px; box-shadow: none; transition: color .2s, border-color .2s; }
+button:hover:not(:disabled) { color: var(--white); border-color: var(--dim); box-shadow: none; }
+#scen button.on, button.primary, html .tabs button.primary { background: var(--white); border-color: var(--white); color: #000; box-shadow: none; }
+
+/* ---------- story, question, narration ---------- */
+.story { background: transparent; border-bottom-color: var(--line); color: #bdbdbd; }
+.story b { color: var(--muted); font-family: var(--mono); font-weight: 400; font-size: 12px; text-transform: lowercase; letter-spacing: .04em; margin-right: 6px; }
+.story .q { background: #121212; border: 1px dashed #6a6a6a; box-shadow: none; color: var(--white); font-weight: 400; font-size: 18px; }
+.story .q b { color: var(--muted); }
+
+#msg { border-left: 0; background: transparent; border-bottom-color: var(--line); }
+#msg::before { display: none; }
+#msgText { font-size: 21px; font-weight: 400; letter-spacing: -.01em; color: #cfcfcf; }
+#msgText b { color: var(--white); font-weight: 500; }
+#msg.err #msgText b { color: var(--bad); }
+
+/* ---------- stage ---------- */
+#stage { background: radial-gradient(circle at 1px 1px, #262626 1px, transparent 0) 0 0 / 24px 24px; }
+.grp { border: 1px dashed #4a4a4a; background: rgba(255, 255, 255, .015); box-shadow: none; border-radius: 16px; }
+.grp span { font-family: var(--mono); font-weight: 400; font-size: 11px; text-transform: lowercase; letter-spacing: .06em; color: var(--muted); }
+
+.net-links line, .net-links line.base { stroke: #6a6a6a; stroke-width: 2; stroke-dasharray: 1 6; stroke-linecap: round; filter: none; }
+.net-links line.flow { display: none; }
+.net-links line.base.hot, .net-links line.on { stroke: var(--white); stroke-width: 2.5; filter: none; animation: dots .6s linear infinite; }
+@keyframes dots { to { stroke-dashoffset: -14; } }
+.net-links text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+/* nodes: one quiet card style for every kind; state is shown with white, not colour */
+.nd, .nd.client, .nd.proxy, .nd.lb, .nd.db, .nd.count { background: linear-gradient(180deg, #1c1c1c, #141414); border: 1px solid var(--edge); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 8px 24px rgba(0, 0, 0, .5); backdrop-filter: none; }
+.nd { animation: monoIn .45s ease-out both; }
+@keyframes monoIn { from { opacity: 0; transform: translate(-50%, -50%) scale(.96); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.nd-t, .nd.proxy .nd-t, .nd.lb .nd-t, .nd.db .nd-t { color: var(--white); font-weight: 500; font-size: 14px; }
+.nd-s { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.nd-badge { background: var(--white); color: #000; font-family: var(--mono); font-weight: 500; font-size: 10px; box-shadow: none; }
+.nd-badge.bad { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+.nd.down { opacity: .35; border-style: dashed; filter: none; }
+.nd.hot { border-color: var(--bad); background: var(--panel); }
+.nd.fl-ok { animation: monoFlash .9s; }
+.nd.fl-bad { animation: monoFlashBad .9s; }
+@keyframes monoFlash { 0%, 50% { box-shadow: 0 0 0 1.5px var(--white); } 100% { box-shadow: 0 0 0 1.5px transparent; } }
+@keyframes monoFlashBad { 0%, 50% { box-shadow: 0 0 0 1.5px var(--bad); } 100% { box-shadow: 0 0 0 1.5px transparent; } }
+
+/* counters: big light numerals */
+.nd.count .big { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--white); font-weight: 300; letter-spacing: -.03em; animation: monoPop .4s ease-out; }
+.nd.count .big small { font-family: var(--mono); font-weight: 400; color: var(--muted); }
+.nd.count.good { border-color: var(--white); box-shadow: none; }
+.nd.count.good .big { background-image: none; color: var(--white); }
+.nd.count.hot { border-color: var(--bad); box-shadow: none; }
+.nd.count.hot .big { background-image: none; color: var(--bad); }
+@keyframes monoPop { from { opacity: .2; } to { opacity: 1; } }
+
+/* packets: small white labels with a faint dotted trail */
+.pk, .pk.ok, .pk.teal, .pk.amber { background: var(--white); color: #000; box-shadow: none; font-family: var(--mono); font-weight: 500; font-size: 11px; padding: 3px 9px; }
+.pk.bad { background: var(--bad); color: #000; box-shadow: none; }
+.pk.muted { background: #2a2a2a; color: #9a9a9a; box-shadow: none; }
+.trail, .ripple { position: absolute; pointer-events: none; border-radius: 50%; }
+.trail { z-index: 4; }
+.ripple { z-index: 2; width: 30px; height: 30px; margin: -15px 0 0 -15px; }
+.trail, .trail.ok, .trail.teal, .trail.amber, .trail.bad, .trail.muted { width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; background: #7a7a7a; box-shadow: none; animation: monoTrail .6s linear forwards; }
+@keyframes monoTrail { from { opacity: .8; } to { opacity: 0; } }
+.ripple, .ripple.ok, .ripple.teal, .ripple.amber, .ripple.bad, .ripple.muted { border: 1px solid rgba(255, 255, 255, .5); animation: monoRipple .7s ease-out forwards; }
+@keyframes monoRipple { from { opacity: .7; transform: scale(.5); } to { opacity: 0; transform: scale(3.2); } }
+
+/* ---------- what lives inside nodes ---------- */
+.kc { background: #111111; border: 1px solid var(--edge); border-radius: 10px; box-shadow: none; }
+.kc.new { border-color: var(--white); background: transparent; box-shadow: none; }
+.kh code { font-size: 13px; font-weight: 500; color: var(--white); }
+.kh .ty { background: transparent; border: 1px solid var(--dim); color: var(--muted); font-family: var(--mono); font-weight: 400; text-transform: lowercase; letter-spacing: .04em; }
+.kb .big { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--white); font-weight: 300; }
+.kb .cap, .none, .wt, .ends { font-family: var(--mono); color: var(--muted); font-style: normal; font-size: 11px; }
+.wt.ok { color: var(--white); } .wt.bad { color: var(--bad); }
+
+/* chips look like cells: grey when idle, white-filled when active */
+.ch { background: var(--soft); border: 1px solid var(--edge); border-radius: 6px; font-family: var(--mono); font-size: 12px; color: #bdbdbd; box-shadow: none; }
+.ch i { color: var(--dim); }
+.ch.new { background: var(--white); border-color: var(--white); color: #000; box-shadow: none; animation: monoPop .35s ease-out; }
+.ch.new i { color: #777; }
+.ch.common { background: transparent; border: 1.5px solid var(--white); color: var(--white); box-shadow: none; }
+
+.ht td { border-top-color: var(--line); }
+.ht td:first-child { color: var(--muted); font-family: var(--mono); font-weight: 400; }
+.ht tr.new td { background: transparent; color: var(--white); }
+.ht tr.new td:first-child { color: var(--white); }
+.zr .rk { font-family: var(--mono); font-weight: 400; color: var(--dim); }
+.zr .nm { font-weight: 500; }
+.zr .bar { height: 6px; background: var(--dim); box-shadow: none; }
+.zr .sc { font-family: var(--mono); font-weight: 400; color: var(--muted); }
+.zr.new .bar { background: var(--white); box-shadow: none; }
+.zr.new .nm, .zr.new .sc { color: var(--white); }
+.nd .cmd { color: var(--white); font-weight: 500; }
+.nd .rep { background: #0e0e0e; border: 1px solid #3a3a3a; color: #cfcfcf; }
+
+/* ---------- bottom panels ---------- */
+.two { border-top-color: var(--line); }
+.two .qt, .two .qt.t, .ans-h, .qt { font-family: var(--mono); font-weight: 400; font-size: 11px; text-transform: lowercase; letter-spacing: .06em; color: var(--muted); }
+.term { background: #0f0f0f; border: 1px solid #3a3a3a; box-shadow: none; color: #cfcfcf; }
+.tl .pr { color: var(--dim); }
+.tl .rp { color: #8f8f8f; }
+.tl.cm { color: var(--dim); }
+.tl.cur { background: transparent; border-left-color: var(--white); box-shadow: none; color: var(--white); }
+.answer { background: transparent; border-top-color: var(--line); }
+.answer ul { color: #cfcfcf; }
+.answer b { color: var(--white); font-weight: 500; }
+.answer li.best span { background: var(--white); color: #000; font-family: var(--mono); font-weight: 500; font-size: 11px; }
+.answer li.not span { background: transparent; color: var(--bad); border: 1px solid var(--bad); font-family: var(--mono); font-weight: 500; font-size: 11px; }
+.footer { background: transparent; border-top-color: var(--line); font-family: var(--mono); font-size: 12px; }
+input[type=range] { accent-color: #ffffff; }
+
+.score th { font-family: var(--mono); font-weight: 400; text-transform: lowercase; color: var(--muted); border-bottom-color: var(--line); }
+.score td { border-bottom-color: var(--line); color: #cfcfcf; }
+.score td:first-child { color: var(--white); font-weight: 500; }
+.score code { color: var(--white); }
+.rule { background: transparent; border-left: 1px solid var(--white); color: #cfcfcf; }
+.rule b { color: var(--white); font-weight: 500; }
+
+/* ---------- commands page ---------- */
+html .intro { border-bottom-color: var(--line); }
+html .intro div { background: #121212; border: 1px solid #3a3a3a; color: #cfcfcf; }
+html .intro b { font-family: var(--mono); font-weight: 400; text-transform: lowercase; color: var(--muted); }
+html .intro code { color: var(--white); }
+html .note { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+html .note code { color: var(--white); }
+html .cmds th { font-family: var(--mono); font-weight: 400; text-transform: lowercase; color: var(--muted); border-bottom-color: var(--line); }
+html .cmds td { border-bottom-color: #262626; color: #cfcfcf; }
+html .cmds tr:hover td { background: #121212; }
+html .cmds td.n { color: var(--dim); font-family: var(--mono); }
+html .cmds tr.g td { color: var(--white); font-family: var(--mono); font-weight: 400; text-transform: lowercase; letter-spacing: .06em; }
+html .cmd { background: #141414; border: 1px solid var(--edge); color: var(--white); box-shadow: none; font-weight: 500; }
+html .cmd:hover { border-color: var(--white); box-shadow: none; }
+html .cmd .k { color: var(--white); text-decoration: underline dotted #6e6e6e; text-underline-offset: 3px; }
+html .out { color: #9a9a9a; }
+html .out.var { color: #6e6e6e; font-style: italic; }
+html .out.err { color: var(--bad); }
+html .legend { font-family: var(--mono); border-top-color: var(--line); }
+html .toast { background: var(--white); color: #000; font-family: var(--mono); }
+
+@media (prefers-reduced-motion: reduce) { .trail, .ripple, .nd, .net-links line { animation: none !important; } }

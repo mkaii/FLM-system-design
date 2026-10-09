@@ -1,0 +1,43 @@
+Class 62: Redis Pub/Sub and Redis Streams
+
+Animation: animations/messaging.html
+Use case all class: a food app. OrderService places orders; EmailService and KitchenService react.
+Live demo: 3 real terminal tabs (Terminal app: Cmd+T for a new tab). In EACH tab run:
+
+    docker exec -it redis redis-cli
+
+  docker exec -it redis  = run a command inside the running container named "redis", interactively
+  redis-cli              = the Redis command line
+  Tab 1 = OrderService (publisher / producer), Tab 2 = EmailService, Tab 3 = KitchenService.
+  Use real terminals, not Redis Insight's CLI: SUBSCRIBE and XREAD BLOCK wait forever, and a terminal
+  tab shows them the way the animation does. (Redis Insight is still good for looking at the stream key.)
+  Stop a waiting terminal with Ctrl-C.
+
+1. Pub/Sub: the live broadcast  (~15 min)
+   Terminal 2, 3:  SUBSCRIBE orders
+   Terminal 1:     PUBLISH orders "order 101: Pizza"   -> (integer) 2
+   - fan-out: every subscriber gets a copy; the publisher does not know who listens
+   - Redis stores nothing (KEYS * shows no key for the channel)
+
+2. Streams: written down  (~15 min)
+   Terminal 2, 3:  XREAD BLOCK 0 STREAMS orders $
+   Terminal 1:     XADD orders * order 101 item Pizza  -> an id like 1791497805767-0
+   Anyone, later:  XRANGE orders - +
+   - a stream is a key (TYPE orders -> stream); entries stay until trimmed
+
+3. What really differs (each one is a step in the animation)  (~25 min)
+   Reader offline     Pub/Sub: missed forever        Stream: XREAD STREAMS orders <last id>
+   Nobody listening   Pub/Sub: PUBLISH -> 0, gone    Stream: stored, XLEN 1
+   Late joiner        Pub/Sub: future only           Stream: XRANGE gives the history
+   Two workers        Pub/Sub: both cook it          Stream: consumer group splits it
+                      XGROUP CREATE orders kitchen 0
+                      XREADGROUP GROUP kitchen cook-1 COUNT 1 STREAMS orders >
+   Worker crashes     Pub/Sub: lost                  Stream: pending until XACK
+                      XPENDING orders kitchen / XCLAIM orders kitchen cook-2 0 <id> / XACK orders kitchen <id>
+   Cost               Pub/Sub: nothing stored        Stream: grows in RAM -> XADD orders MAXLEN ~ 1000 * ...
+
+4. Comparison table + the rule  (~5 min)
+   Ask: is it OK to lose this message?  Yes -> Pub/Sub.  No -> Stream.
+   Bridge to the MQ class: a stream is a small message queue (log, consumer groups, acks).
+
+Note: the Redis cluster class moved to class 63.

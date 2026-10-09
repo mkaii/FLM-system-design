@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pub/Sub vs Streams</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+<style>
+/* a terminal window inside a box */
+.tw { font: 11.5px/1.4 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; background: #0c0c0c; border: 1px solid #333; border-radius: 7px; padding: 6px 9px; min-height: 40px; }
+.tw div { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.tw .cmd { color: #ffffff; font-weight: 600; }
+.tw .cmd::before { content: '> '; color: #6e6e6e; }
+.tw .out { color: #9a9a9a; }
+.tw .msg { color: var(--good); font-weight: 600; }
+.tw .err { color: var(--bad); font-weight: 600; }
+.tw .wait { color: #6e6e6e; font-style: italic; }
+/* stream entries */
+.se { font: 12px/1.4 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; padding: 4px 8px; margin: 4px 0; border: 1px solid #444; border-radius: 6px; white-space: nowrap; transition: all .35s; }
+.se b { color: var(--muted); font-weight: 500; margin-right: 6px; }
+.se i { font-style: normal; float: right; margin-left: 10px; color: var(--muted); }
+.se.new { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.se.pend { border-style: dashed; border-color: var(--amber); }
+.se.pend i { color: var(--amber); }
+.se.done { opacity: .45; }
+.se.gone { opacity: 0; }
+.code { margin: 0; padding: 12px 14px; border-radius: 9px; font: 12.5px/1.55 "JetBrains Mono", ui-monospace, Menlo, monospace; white-space: pre; overflow-x: auto; background: #0f0f0f; border: 1px solid #3a3a3a; color: #d6d6d6; }
+.code .h { color: #ffffff; font-weight: 600; }
+.code .cm { color: #6e6e6e; }
+.two { grid-template-columns: 1fr; }
+.setup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.setup .sl { font: 11px "JetBrains Mono", monospace; text-transform: lowercase; letter-spacing: .06em; padding: 2px 9px; border: 1px solid var(--dim); border-radius: 999px; }
+.setup b { color: var(--ink); font-weight: 500; }
+.setup code { font: 600 13.5px "JetBrains Mono", ui-monospace, monospace; color: #fff; background: #0f0f0f; border: 1px solid #555; border-radius: 8px; padding: 5px 11px; cursor: pointer; }
+.setup code:hover { border-color: #fff; }
+.setup .sn { flex-basis: 100%; font-size: 13px; }
+table.ct { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ct th { text-align: left; font: 11px "JetBrains Mono", monospace; text-transform: lowercase; letter-spacing: .06em; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid #444; font-weight: 400; }
+.ct td { padding: 9px 10px; border-bottom: 1px solid #262626; vertical-align: top; }
+.ct td.t { width: 78px; white-space: nowrap; }
+.ct td.t span { font: 600 11px "JetBrains Mono", monospace; padding: 2px 8px; border: 1px solid #666; border-radius: 999px; color: #fff; }
+.ct td.c { width: 32%; }
+.ct td.c code { font: 600 13px "JetBrains Mono", ui-monospace, monospace; color: #fff; background: #0f0f0f; border: 1px solid #444; border-radius: 7px; padding: 4px 9px; display: inline-block; white-space: pre-wrap; word-break: break-word; }
+.ct td.m { color: #cfcfcf; line-height: 1.55; }
+.ct td.m b { color: #fff; font-weight: 500; font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+.ct td.o { width: 25%; }
+.ct td.o pre { margin: 0; font: 12px/1.45 "JetBrains Mono", monospace; color: #9a9a9a; white-space: pre-wrap; }
+.ct tr.g td { padding: 14px 10px 5px; border-bottom: 0; font: 600 11.5px "JetBrains Mono", monospace; text-transform: lowercase; letter-spacing: .08em; color: #fff; }
+.ct tr.note td { color: var(--muted); font-style: italic; font-size: 13px; }
+.score { font-size: 14px; }
+.score td { padding: 7px 10px; white-space: normal; }
+.score th { padding: 5px 10px; }
+.rule { margin-top: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Redis Pub/Sub vs Redis Streams</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="messaging.html">Animation</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="setup">
+      <span class="sl">before class</span>
+      <span>Open <b>3 terminal tabs</b> (Terminal: Cmd+T). In each one run</span>
+      <code id="startCmd" title="click to copy">docker exec -it redis redis-cli</code>
+      <span class="sn">= run <b>redis-cli</b> (the Redis command line) inside the Docker container named <b>redis</b>. Tab 1 = OrderService, tab 2 = EmailService, tab 3 = KitchenService.</span>
+    </div>
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final">
+      <div><div class="qt">The commands, and what each one means</div><div id="code"></div></div>
+      <div><div class="qt t">What Redis holds after this step</div><div id="endView"></div></div>
+    </div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(644, 1.1);
+$('#startCmd').onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText('docker exec -it redis redis-cli'); $('#startCmd').textContent = 'copied'; setTimeout(() => { $('#startCmd').textContent = 'docker exec -it redis redis-cli'; }, 900); };
+
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 900 });
+const lost = (a, b, label) => Net.send(a, b, { label, cls: 'bad', dur: 900, stopAt: 0.55 });   // a message that never arrives
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+const both = list => Promise.all(list);
+
+// ---------- terminals: a box that shows what was typed and what came back ----------
+const TERM = {};
+function term(id, x, y, title, role, w, max) {
+  TERM[id] = { lines: [], max: max || 3 };
+  Net.node(id, { x, y, label: title, sub: role, kind: 'client', w: w || 290, body: termHTML(id) });
+}
+function termHTML(id) {
+  const L = TERM[id].lines;
+  return '<div class="tw">' + (L.length ? L.map(l => `<div class="${l.c}">${esc(l.t)}</div>`).join('') : '<div class="wait">ready</div>') + '</div>';
+}
+function push(id, line) {
+  const t = TERM[id];
+  t.lines.push(line);
+  t.lines = t.lines.slice(-t.max);
+  Net.set(id, { body: termHTML(id) });
+}
+const type = (id, cmd) => push(id, { t: cmd, c: 'cmd' });
+const out = (id, text, cls) => String(text).split('\n').forEach(t => push(id, { t, c: cls || 'out' }));
+const clear = id => { TERM[id].lines = []; Net.set(id, { body: termHTML(id) }); };
+const offline = id => Net.set(id, { state: 'down', badge: 'offline', badgeCls: 'bad' });
+const online = id => Net.set(id, { state: '', badge: '' });
+const verdict = (id, text, good) => Net.set(id, { badge: text, badgeCls: good ? 'ok' : 'bad' });
+
+// ---------- the channel (Pub/Sub) and the stream ----------
+function channel(id, x, y, listening) {
+  Net.node(id, { x, y, label: 'channel: orders', sub: 'stores nothing', kind: 'proxy', w: 230, body: chHTML(listening) });
+}
+const chHTML = n => `<div class="none">listening right now: ${n}</div>`;
+const listening = (id, n) => Net.set(id, { body: chHTML(n) });
+
+const SE = {};
+function stream(id, x, y, entries) {
+  SE[id] = entries.map(e => Object.assign({ s: '' }, e));
+  Net.node(id, { x, y, label: 'stream: orders', sub: 'a key, stored in Redis', kind: 'lb', w: 260, body: stHTML(id) });
+}
+function stHTML(id) {
+  const E = SE[id];
+  if (!E.length) return '<div class="none">empty</div>';
+  return E.map(e => `<div class="se ${e.s}"><b>${e.id}</b>${e.t}${e.n ? `<i>${e.n}</i>` : ''}</div>`).join('')
+    + `<div class="none">${E.length} ${E.length === 1 ? 'entry' : 'entries'} stored</div>`;
+}
+const paintS = id => Net.set(id, { body: stHTML(id) });
+function addE(id, e) {
+  SE[id].forEach(x => { if (x.s === 'new') x.s = ''; });
+  SE[id].push(Object.assign({ s: 'new' }, e));
+  paintS(id);
+}
+function markE(id, eid, s, n) { SE[id].forEach(x => { if (x.id === eid) { x.s = s; x.n = n; } }); paintS(id); }
+
+const E101 = { id: '1-0', t: 'order 101 · Pizza' }, E102 = { id: '2-0', t: 'order 102 · Burger' }, E103 = { id: '3-0', t: 'order 103 · Pasta' };
+const MSG = (o) => `1) "message"\n2) "orders"\n3) "${o}"`;
+
+// ---------- layouts ----------
+const TS = 14, TM = 330, LS = TS + 150, LM = TM + 150;
+// one big lane (steps 1 and 2)
+function single(label, roles) {
+  Net.group({ x: 16, y: 14, w: 968, h: 616, label });
+  term('a1', 170, 322, 'Terminal 1', roles[0], 300, 6);
+  term('a2', 825, 190, 'Terminal 2', roles[1], 310, 6);
+  term('a3', 825, 455, 'Terminal 3', roles[2], 310, 6);
+}
+// two lanes: Pub/Sub on top, Stream below, same three terminals in each
+function compare(roles, o) {
+  o = o || {};
+  Net.group({ x: 16, y: TS, w: 968, h: 300, label: 'Redis Pub/Sub' });
+  Net.group({ x: 16, y: TM, w: 968, h: 300, label: 'Redis Stream' });
+  term('p1', 165, LS, 'Terminal 1', roles[0]);
+  channel('ch', 485, LS, o.listen || 0);
+  term('p2', 825, TS + 82, 'Terminal 2', roles[1]);
+  term('p3', 825, TS + 222, 'Terminal 3', roles[2]);
+  Net.link('p1', 'ch');
+  Net.link('ch', 'p2', { dashed: !o.p2 });
+  Net.link('ch', 'p3', { dashed: !o.p3 });
+  term('s1', 165, LM, 'Terminal 1', roles[0]);
+  stream('st', 485, LM, o.entries || []);
+  term('s2', 825, TM + 82, 'Terminal 2', roles[1]);
+  term('s3', 825, TM + 222, 'Terminal 3', roles[2]);
+  Net.link('s1', 'st');
+  Net.link('st', 's2');
+  Net.link('st', 's3');
+}
+
+
+const SUBOUT = 'Reading messages... (press Ctrl-C to quit)\n1) "subscribe"\n2) "orders"\n3) (integer) 1';
+const xr = (id, o, item) => `1) 1) "orders"\n   2) 1) 1) "${id}"\n         2) 1) "order"\n            2) "${o}"\n            3) "item"\n            4) "${item}"`;
+const xe = (id, o, item) => `1) 1) "${id}"\n   2) 1) "order"\n      2) "${o}"\n      3) "item"\n      4) "${item}"`;
+// bold a keyword inside a meaning
+const B = t => `<b>${t}</b>`;
+const PANEL = {
+  1: [
+    'Terminals 2 and 3 listen',
+    ['T2, T3', 'SUBSCRIBE orders', `${B('SUBSCRIBE')} = start listening. ${B('orders')} = the channel to listen on (a name you make up). The terminal now just waits, receiving messages until you press Ctrl-C.`, SUBOUT],
+    'Terminal 1 sends',
+    ['T1', 'PUBLISH orders "order 101: Pizza"', `${B('PUBLISH')} = send a message. ${B('orders')} = which channel. The quoted text = the message itself. Redis hands a copy to every listener, then forgets it.`, '(integer) 2'],
+    ['note', 'The reply 2 = how many listeners received it.'],
+    'Terminals 2 and 3 print (nothing typed)',
+    ['T2, T3', '(arrives on its own)', `${B('"message"')} = a message arrived (not a subscribe confirmation). ${B('"orders"')} = the channel it came from. The last line = the message text.`, '1) "message"\\n2) "orders"\\n3) "order 101: Pizza"']
+  ],
+  2: [
+    'Terminals 2 and 3 wait for new entries',
+    ['T2, T3', 'XREAD BLOCK 0 STREAMS orders $', `${B('XREAD')} = read entries. ${B('BLOCK 0')} = if there is nothing, wait forever (0 = no time limit). ${B('STREAMS orders')} = read the stream named orders. ${B('$')} = only entries added after right now.`, '(waits…)'],
+    'Terminal 1 adds an entry',
+    ['T1', 'XADD orders * order 101 item Pizza', `${B('XADD')} = append an entry to a stream. ${B('orders')} = the stream (a normal Redis key, created if missing). ${B('*')} = let Redis make the entry id. ${B('order 101 item Pizza')} = the data, as field/value pairs: order=101, item=Pizza.`, '"1791497805767-0"'],
+    ['note', 'The id is time-sequence. The animation draws it as 1-0 to keep it short.'],
+    'Terminals 2 and 3 print (nothing typed)',
+    ['T2, T3', '(arrives on its own)', `Each waiting reader returns: the ${B('stream name')}, the ${B('entry id')}, then the ${B('fields')}.`, xr('1791497805767-0', '101', 'Pizza')],
+    'The entry is still there',
+    ['T1', 'XLEN orders', `${B('XLEN')} = how many entries the stream holds. Pub/Sub has no such thing: nothing is stored.`, '(integer) 1'],
+    ['any', 'XRANGE orders - +', `${B('XRANGE')} = read a range of entries. ${B('-')} = from the very first. ${B('+')} = to the last. This is the history.`, xe('1791497805767-0', '101', 'Pizza')]
+  ],
+  3: [
+    'Pub/Sub: the email service was offline',
+    ['T1', 'PUBLISH orders "order 102: Burger"', 'Sent while Terminal 2 was restarting. Only Terminal 3 was listening.', '(integer) 1'],
+    ['T2', 'SUBSCRIBE orders', 'After the restart it listens again, but only for messages from now on. Order 102 is gone; there is no command to get it back.', SUBOUT],
+    'Stream: the same moment',
+    ['T1', 'XADD orders * order 102 item Burger', 'The entry is stored, whether or not anyone is reading.', '"1791497805768-0"'],
+    ['T2', 'XREAD STREAMS orders 1-0', `${B('1-0')} = the last entry id this reader saw. Redis returns everything ${B('after')} it. No BLOCK, so it answers at once.`, xr('2-0', '102', 'Burger')],
+    ['note', 'Remember the last id you processed, and you can always continue from there.']
+  ],
+  4: [
+    'Pub/Sub: nobody has subscribed yet',
+    ['T1', 'PUBLISH orders "order 101: Pizza"', 'There is no listener, so the message goes nowhere.', '(integer) 0'],
+    ['note', '0 = it reached nobody. The message is gone.'],
+    'Stream: nobody is reading yet',
+    ['T1', 'XADD orders * order 101 item Pizza', 'Stored. A stream does not care whether a reader exists.', '"1-0"'],
+    ['T1', 'XLEN orders', 'The entry is waiting.', '(integer) 1'],
+    ['T2, T3', 'XRANGE orders - +', 'When the services start, they read everything from the first entry.', xe('1-0', '101', 'Pizza')]
+  ],
+  5: [
+    'Pub/Sub: Analytics starts after orders 101 to 103',
+    ['T3', 'SUBSCRIBE orders', 'Listens from now on. Orders 101, 102, 103 already happened and are not delivered.', SUBOUT],
+    'Stream: the same service',
+    ['T3', 'XRANGE orders - +', `${B('-')} = start from the first entry ever. ${B('+')} = up to the last. The whole history in one command.`, `1) 1) "1-0"\\n   2) 1) "order" 2) "101" 3) "item" 4) "Pizza"\\n2) 1) "2-0"\\n   2) …order 102 · Burger\\n3) 1) "3-0"\\n   2) …order 103 · Pasta`],
+    ['T3', 'XREAD BLOCK 0 STREAMS orders $', 'Then wait for new orders, like a subscriber. (The animation shows only the first command.)', '(waits…)']
+  ],
+  6: [
+    'Pub/Sub: two cooks, both subscribed',
+    ['T2, T3', 'SUBSCRIBE orders', 'Both cooks listen on the same channel.', SUBOUT],
+    ['T1', 'PUBLISH orders "order 101: Pizza"', 'One message.', '(integer) 2'],
+    ['note', '2 listeners = both cooks receive it, so the pizza is cooked twice.'],
+    'Stream: the cooks join one consumer group',
+    ['T1', 'XGROUP CREATE orders kitchen 0', `${B('XGROUP CREATE')} = make a consumer group. ${B('orders')} = the stream. ${B('kitchen')} = the group name: a team of workers. ${B('0')} = the team starts from the first entry.`, 'OK'],
+    ['T2', 'XREADGROUP GROUP kitchen cook-1 COUNT 1 STREAMS orders >', `${B('XREADGROUP')} = read as a group member. ${B('GROUP kitchen cook-1')} = I am cook-1 of group kitchen. ${B('COUNT 1')} = at most one entry. ${B('>')} = an entry nobody in this group has been given yet.`, xr('1-0', '101', 'Pizza')],
+    ['T3', 'XREADGROUP GROUP kitchen cook-2 COUNT 1 STREAMS orders >', 'Same, as cook-2. Redis skips what cook-1 already has and gives the next entry. Each entry goes to only one member.', xr('2-0', '102', 'Burger')]
+  ],
+  7: [
+    'Stream: cook-1 takes order 101 and crashes',
+    ['T2', 'XREADGROUP GROUP kitchen cook-1 COUNT 1 STREAMS orders >', 'cook-1 receives entry 1-0. Redis now marks it pending for cook-1. cook-1 crashes before sending XACK.', xr('1-0', '101', 'Pizza')],
+    ['T3', 'XPENDING orders kitchen', `${B('XPENDING')} = list entries that were handed out but never confirmed. ${B('kitchen')} = the group.`, '1) (integer) 1\\n2) "1-0"\\n3) "1-0"\\n4) 1) 1) "cook-1"\\n      2) "1"'],
+    ['note', 'Reading the reply: 1 entry pending, oldest id 1-0, newest id 1-0, and cook-1 holds 1 of them.'],
+    ['T3', 'XCLAIM orders kitchen cook-2 0 1-0', `${B('XCLAIM')} = take an entry over from another worker. ${B('kitchen')} = the group. ${B('cook-2')} = the new owner (me). ${B('0')} = how long it must have been idle first, in ms (0 = right now; in real life use something like 60000, so you do not steal a job that is just slow). ${B('1-0')} = the entry id.`, xe('1-0', '101', 'Pizza')],
+    ['T3', 'XACK orders kitchen 1-0', `${B('XACK')} = acknowledge: "I finished this one." Redis removes it from the pending list. Send it only after the job is really done.`, '(integer) 1'],
+    'Pub/Sub: the same crash',
+    ['T2', '(crashes)', 'Redis already delivered the message and forgot it. There is nothing to claim and no way to ask again.', '–']
+  ],
+  8: [
+    'Pub/Sub: 1,000 orders published',
+    ['T1', 'KEYS *', `${B('KEYS *')} = list every key in the database. A channel is not a key, so nothing from Pub/Sub shows up.`, '(empty array)'],
+    'Stream: 1,000 orders added',
+    ['T1', 'XLEN orders', 'Every entry is kept in RAM, and the number only goes up.', '(integer) 1000'],
+    ['T1', 'XADD orders MAXLEN ~ 1000 * order 1001 item Pizza', `${B('MAXLEN ~ 1000')} = after adding, trim the stream to about the latest 1000 entries. ${B('~')} = "about": Redis trims in whole blocks, which is faster than trimming to the exact number.`, '"1791497805770-0"']
+  ]
+};
+
+// ---------- bottom panels ----------
+// rows: a string = a group heading; [terminals, command, meaning (html), reply]; ['note', text] = a plain note
+function setRows(rows, right) {
+  let h = '<table class="ct"><tr><th>terminal</th><th>command</th><th>what it means</th><th>reply</th></tr>';
+  rows.forEach(r => {
+    if (typeof r === 'string') h += `<tr class="g"><td colspan="4">${r}</td></tr>`;
+    else if (r[0] === 'note') h += `<tr class="note"><td colspan="4">${r[1]}</td></tr>`;
+    else h += `<tr><td class="t"><span>${r[0]}</span></td><td class="c"><code>${esc(r[1])}</code></td><td class="m">${r[2]}</td><td class="o"><pre>${esc(r[3])}</pre></td></tr>`;
+  });
+  $('#code').innerHTML = h + '</table>';
+  $('#endView').innerHTML = right;
+  $('#final').classList.remove('hidden');
+}
+// the real shapes redis-cli prints
+const nothing = '<div class="kc"><div class="kh"><code>channel: orders</code><span class="ty">pub/sub</span></div><div class="kb"><div class="none">nothing stored · KEYS * shows no key for it</div></div></div>';
+const streamCard = (entries, note) => '<div class="kc"><div class="kh"><code>orders</code><span class="ty">stream</span></div><div class="kb">'
+  + entries.map(e => `<div class="se"><b>${e.id}</b>${e.t}</div>`).join('') + (note ? `<div class="cap">${note}</div>` : '') + '</div></div>';
+
+// ================= Step 1: Pub/Sub, the live broadcast =================
+function setup1() {
+  single('Redis Pub/Sub', ['OrderService · publisher', 'EmailService · subscriber', 'KitchenService · subscriber']);
+  channel('mid', 505, 322, 0);
+  Net.link('a1', 'mid');
+  Net.link('mid', 'a2', { dashed: true });
+  Net.link('mid', 'a3', { dashed: true });
+  setRows(PANEL[1], nothing);
+}
+async function run1(ctx) {
+  say('A food app. When an order is placed, the <b>email service</b> and the <b>kitchen</b> both need to know.');
+  await Net.beat(ctx);
+  say('Terminals 2 and 3 run <b>SUBSCRIBE orders</b>: they start <b>listening</b> on the channel.');
+  type('a2', 'SUBSCRIBE orders');
+  type('a3', 'SUBSCRIBE orders');
+  out('a2', 'Reading messages...', 'wait');
+  out('a3', 'Reading messages...', 'wait');
+  Net.linkSet('mid', 'a2', { dashed: false });
+  Net.linkSet('mid', 'a3', { dashed: false });
+  listening('mid', 2);
+  await Net.beat(ctx);
+  say('Terminal 1 places an order: <b>PUBLISH orders "order 101: Pizza"</b>.');
+  type('a1', 'PUBLISH orders "order 101: Pizza"');
+  await send('a1', 'mid', 'order 101');
+  Net.check(ctx);
+  await both([send('mid', 'a2', 'order 101', 'ok'), send('mid', 'a3', 'order 101', 'ok')]);
+  Net.check(ctx);
+  out('a2', MSG('order 101: Pizza'), 'msg');
+  out('a3', MSG('order 101: Pizza'), 'msg');
+  out('a1', '(integer) 2');
+  verdict('a2', 'got it', true);
+  verdict('a3', 'got it', true);
+  say('Both got a copy. <b>PUBLISH</b> replied <b>2</b>: the number of listeners it reached. One message, a copy to everyone: <b>fan-out</b>.');
+  await Net.beat(ctx);
+  Net.flash('mid', 'ok');
+  say('And the channel <b>kept nothing</b>. Redis passed the message on and forgot it. That is Pub/Sub: a <b>live broadcast</b>.', 'win');
+}
+
+// ================= Step 2: Stream, written down =================
+function setup2() {
+  single('Redis Stream', ['OrderService · producer', 'EmailService · reader', 'KitchenService · reader']);
+  stream('mid', 505, 322, []);
+  Net.link('a1', 'mid');
+  Net.link('mid', 'a2');
+  Net.link('mid', 'a3');
+  setRows(PANEL[2], streamCard([E101], 'stays until you delete or trim it'));
+}
+async function run2(ctx) {
+  say('Same food app, now with a <b>Stream</b>: instead of shouting the order, Redis <b>writes it down</b>.');
+  await Net.beat(ctx);
+  say('Terminals 2 and 3 wait for new entries: <b>XREAD BLOCK 0 STREAMS orders $</b>.');
+  type('a2', 'XREAD BLOCK 0 STREAMS orders $');
+  type('a3', 'XREAD BLOCK 0 STREAMS orders $');
+  out('a2', 'waiting for a new entry…', 'wait');
+  out('a3', 'waiting for a new entry…', 'wait');
+  await Net.beat(ctx);
+  say('Terminal 1 adds the order: <b>XADD orders * order 101 item Pizza</b>. Redis gives it an <b>id</b>.');
+  type('a1', 'XADD orders * order 101 item Pizza');
+  await send('a1', 'mid', 'XADD');
+  Net.check(ctx);
+  addE('mid', E101);
+  out('a1', '"1-0"');
+  await both([send('mid', 'a2', 'entry 1-0', 'ok'), send('mid', 'a3', 'entry 1-0', 'ok')]);
+  Net.check(ctx);
+  out('a2', '1-0  order 101 · Pizza', 'msg');
+  out('a3', '1-0  order 101 · Pizza', 'msg');
+  say('Both readers got it, just like Pub/Sub. <b>But look at the stream:</b> the order is <b>still there</b>.');
+  await Net.beat(ctx);
+  say('Anyone can read the history later: <b>XRANGE orders - +</b> (from the first entry to the last).');
+  clear('a3');
+  type('a3', 'XRANGE orders - +');
+  await send('mid', 'a3', 'history', 'ok');
+  out('a3', '1-0  order 101 · Pizza', 'msg');
+  await Net.beat(ctx);
+  say('A Stream is a <b>log kept in Redis</b>: every entry has an id and stays, so readers can come back for it.', 'win');
+}
+
+// ================= Step 3: a subscriber goes offline =================
+function setup3() {
+  compare(['OrderService', 'EmailService', 'KitchenService'], { listen: 2, p2: true, p3: true, entries: [E101] });
+  ['p2', 'p3'].forEach(id => { type(id, 'SUBSCRIBE orders'); out(id, 'Reading messages...', 'wait'); });
+  ['s2', 's3'].forEach(id => { out(id, 'already read 1-0', 'wait'); });
+  setRows(PANEL[3], nothing + streamCard([E101, E102]));
+}
+async function run3(ctx) {
+  say('Both services are listening. Now the <b>email service restarts</b> (a deploy). For 10 seconds it is <b>offline</b>.');
+  await Net.beat(ctx);
+  offline('p2');
+  offline('s2');
+  listening('ch', 1);
+  await Net.beat(ctx, 1600);
+  say('Order 102 arrives while it is offline.');
+  type('p1', 'PUBLISH orders "order 102: Burger"');
+  type('s1', 'XADD orders * order 102 item Burger');
+  await both([send('p1', 'ch', 'order 102'), send('s1', 'st', 'XADD')]);
+  Net.check(ctx);
+  addE('st', E102);
+  out('s1', '"2-0"');
+  await both([lost('ch', 'p2', 'order 102'), send('ch', 'p3', 'order 102', 'ok'), send('st', 's3', 'entry 2-0', 'ok')]);
+  Net.check(ctx);
+  out('p1', '(integer) 1');
+  out('p3', MSG('order 102: Burger'), 'msg');
+  out('s3', '2-0  order 102 · Burger', 'msg');
+  await Net.beat(ctx);
+
+  say('The email service is <b>back</b>.');
+  online('p2');
+  online('s2');
+  listening('ch', 2);
+  clear('p2');
+  type('p2', 'SUBSCRIBE orders');
+  out('p2', 'Reading messages...', 'wait');
+  clear('s2');
+  type('s2', 'XREAD STREAMS orders 1-0');
+  await send('st', 's2', 'entry 2-0', 'ok');
+  Net.check(ctx);
+  out('s2', '2-0  order 102 · Burger', 'msg');
+  verdict('p2', 'missed order 102');
+  verdict('s2', 'caught up', true);
+  say('<b>Pub/Sub:</b> order 102 is <b>gone forever</b>, so no email. <b>Stream:</b> it reads on from the last id it saw (1-0) and gets 102.', 'err');
+  await Net.beat(ctx);
+  say('<b>Stream wins.</b> Pub/Sub is <b>fire-and-forget</b>: if you were not listening at that moment, you missed it.', 'win');
+}
+
+// ================= Step 4: nobody is listening =================
+function setup4() {
+  compare(['OrderService', 'EmailService (not started)', 'KitchenService (not started)']);
+  setRows(PANEL[4], nothing + streamCard([E101]));
+}
+async function run4(ctx) {
+  say('Early morning. The order service is up, but the <b>email and kitchen services have not started yet</b>.');
+  await Net.beat(ctx);
+  say('An order comes in.');
+  type('p1', 'PUBLISH orders "order 101: Pizza"');
+  type('s1', 'XADD orders * order 101 item Pizza');
+  await both([send('p1', 'ch', 'order 101'), send('s1', 'st', 'XADD')]);
+  Net.check(ctx);
+  out('p1', '(integer) 0', 'err');
+  Net.flash('ch', 'bad');
+  addE('st', E101);
+  out('s1', '"1-0"');
+  say('<b>Pub/Sub</b> replies <b>0</b>: nobody heard it, so it is <b>dropped</b>. <b>Stream</b> stores it as entry 1-0.', 'err');
+  await Net.beat(ctx);
+  say('Ten minutes later, the services start.');
+  type('p2', 'SUBSCRIBE orders');
+  out('p2', 'Reading messages...', 'wait');
+  type('p3', 'SUBSCRIBE orders');
+  out('p3', 'Reading messages...', 'wait');
+  listening('ch', 2);
+  Net.linkSet('ch', 'p2', { dashed: false });
+  Net.linkSet('ch', 'p3', { dashed: false });
+  type('s2', 'XRANGE orders - +');
+  type('s3', 'XRANGE orders - +');
+  await both([send('st', 's2', 'entry 1-0', 'ok'), send('st', 's3', 'entry 1-0', 'ok')]);
+  Net.check(ctx);
+  out('s2', '1-0  order 101 · Pizza', 'msg');
+  out('s3', '1-0  order 101 · Pizza', 'msg');
+  verdict('p2', 'never saw 101');
+  verdict('p3', 'never saw 101');
+  verdict('s2', 'got 101', true);
+  verdict('s3', 'got 101', true);
+  await Net.beat(ctx);
+  say('<b>Stream wins.</b> A Stream does not need anyone listening at the moment you write. Pub/Sub does.', 'win');
+}
+
+// ================= Step 5: a new service joins late (history) =================
+function setup5() {
+  compare(['OrderService', 'KitchenService', 'AnalyticsService (new)'], { listen: 1, p2: true });
+  type('p2', 'SUBSCRIBE orders');
+  out('p2', 'Reading messages...', 'wait');
+  setRows(PANEL[5], nothing + streamCard([E101, E102, E103]));
+}
+async function run5(ctx) {
+  say('The kitchen is running. Three orders come in: 101, 102, 103.');
+  await Net.beat(ctx, 1500);
+  const orders = [['101: Pizza', E101], ['102: Burger', E102], ['103: Pasta', E103]];
+  for (const o of orders) {
+    type('p1', `PUBLISH orders "order ${o[0]}"`);
+    type('s1', `XADD orders * order ${o[0].split(':')[0]} …`);
+    await both([send('p1', 'ch', 'order ' + o[0].split(':')[0], '', 600), send('s1', 'st', 'XADD', '', 600)]);
+    Net.check(ctx);
+    addE('st', o[1]);
+    await send('ch', 'p2', 'order ' + o[0].split(':')[0], 'ok', 500);
+    out('p2', `3) "order ${o[0]}"`, 'msg');
+  }
+  await Net.beat(ctx);
+  say('Now the business adds an <b>Analytics service</b>. It wants to count <b>today\'s</b> orders, including the ones already placed.');
+  Net.linkSet('ch', 'p3', { dashed: false });
+  type('p3', 'SUBSCRIBE orders');
+  out('p3', 'Reading messages...', 'wait');
+  listening('ch', 2);
+  type('s3', 'XRANGE orders - +');
+  await send('st', 's3', '3 entries', 'ok');
+  Net.check(ctx);
+  out('s3', '1-0  order 101 · Pizza\n2-0  order 102 · Burger\n3-0  order 103 · Pasta', 'msg');
+  verdict('p3', 'sees 0 of 3');
+  verdict('s3', 'sees 3 of 3', true);
+  say('<b>Pub/Sub:</b> Analytics only gets orders from now on. <b>Stream:</b> XRANGE hands it the whole history.', 'err');
+  await Net.beat(ctx);
+  say('<b>Stream wins.</b> A Stream is a <b>history</b> you can replay. Pub/Sub has no past.', 'win');
+}
+
+// ================= Step 6: two workers share the work =================
+function setup6() {
+  compare(['OrderService', 'Kitchen · cook-1', 'Kitchen · cook-2'], { listen: 2, p2: true, p3: true });
+  ['p2', 'p3'].forEach(id => { type(id, 'SUBSCRIBE orders'); out(id, 'Reading messages...', 'wait'); });
+  setRows(PANEL[6], nothing + streamCard([E101, E102], 'each entry handed to ONE cook in the group'));
+}
+async function run6(ctx) {
+  say('Lunch rush: one cook is too slow, so the kitchen runs <b>two cooks</b>. Each order must be cooked <b>once</b>.');
+  await Net.beat(ctx);
+  say('<b>Pub/Sub:</b> both cooks are subscribed. Two orders are published.');
+  for (const o of [['101: Pizza', '101'], ['102: Burger', '102']]) {
+    type('p1', `PUBLISH orders "order ${o[0]}"`);
+    await send('p1', 'ch', 'order ' + o[1], '', 600);
+    Net.check(ctx);
+    await both([send('ch', 'p2', 'order ' + o[1], 'bad', 600), send('ch', 'p3', 'order ' + o[1], 'bad', 600)]);
+    Net.check(ctx);
+    out('p1', '(integer) 2');
+    out('p2', `cooking order ${o[1]}`, 'err');
+    out('p3', `cooking order ${o[1]}`, 'err');
+  }
+  verdict('p2', 'cooked 101 + 102');
+  verdict('p3', 'cooked 101 + 102');
+  say('Both cooks got <b>every</b> order: 2 orders, <b>4 dishes</b>. Pub/Sub always gives everyone a copy.', 'err');
+  await Net.beat(ctx);
+
+  say('<b>Stream:</b> the two cooks join one <b>consumer group</b> called <b>kitchen</b>.');
+  type('s1', 'XADD orders * order 101 …');
+  await send('s1', 'st', 'XADD', '', 600);
+  addE('st', E101);
+  type('s1', 'XADD orders * order 102 …');
+  await send('s1', 'st', 'XADD', '', 600);
+  addE('st', E102);
+  type('s1', 'XGROUP CREATE orders kitchen 0');
+  out('s1', 'OK');
+  await Net.beat(ctx, 1500);
+  type('s2', 'XREADGROUP GROUP kitchen cook-1 … >');
+  type('s3', 'XREADGROUP GROUP kitchen cook-2 … >');
+  await both([send('st', 's2', 'entry 1-0', 'ok'), send('st', 's3', 'entry 2-0', 'ok')]);
+  Net.check(ctx);
+  out('s2', '1-0  order 101 · Pizza', 'msg');
+  out('s3', '2-0  order 102 · Burger', 'msg');
+  markE('st', '1-0', '', 'cook-1');
+  markE('st', '2-0', '', 'cook-2');
+  verdict('s2', 'cooked 101', true);
+  verdict('s3', 'cooked 102', true);
+  say('Redis <b>splits</b> the orders: 101 to cook-1, 102 to cook-2. Each order cooked <b>once</b>.');
+  await Net.beat(ctx);
+  say('<b>Stream wins.</b> Consumer groups let several workers <b>share</b> the work. Pub/Sub can only copy it to all of them.', 'win');
+}
+
+// ================= Step 7: a worker crashes mid-order =================
+function setup7() {
+  compare(['OrderService', 'Kitchen · cook-1', 'Kitchen · cook-2'], { listen: 1, p2: true, entries: [E101] });
+  type('p2', 'SUBSCRIBE orders');
+  out('p2', 'Reading messages...', 'wait');
+  out('s1', 'XGROUP CREATE orders kitchen 0  → OK', 'wait');
+  setRows(PANEL[7], nothing + streamCard([E101], 'acknowledged (XACK): nothing pending'));
+}
+async function run7(ctx) {
+  say('Order 101 arrives. <b>cook-1 takes it</b>, and then <b>crashes</b> before the pizza is done.');
+  await Net.beat(ctx);
+  type('p1', 'PUBLISH orders "order 101: Pizza"');
+  await send('p1', 'ch', 'order 101');
+  await send('ch', 'p2', 'order 101', 'ok');
+  Net.check(ctx);
+  out('p2', 'cooking order 101…', 'msg');
+  type('s2', 'XREADGROUP GROUP kitchen cook-1 … >');
+  await send('st', 's2', 'entry 1-0', 'ok');
+  Net.check(ctx);
+  out('s2', 'cooking order 101…', 'msg');
+  markE('st', '1-0', 'pend', 'pending · cook-1');
+  await Net.beat(ctx);
+  say('💥 cook-1 <b>crashes</b> on both sides.', 'err');
+  offline('p2');
+  offline('s2');
+  listening('ch', 0);
+  await Net.beat(ctx);
+  say('<b>Pub/Sub:</b> Redis already handed the message over and forgot it. Nobody knows order 101 was never cooked.', 'err');
+  verdict('p2', 'order 101 lost');
+  type('p3', '(nothing to read)');
+  await Net.beat(ctx);
+  say('<b>Stream:</b> the entry is still <b>pending</b>: given to cook-1, never confirmed. <b>XPENDING</b> shows it.');
+  type('s3', 'XPENDING orders kitchen');
+  await send('st', 's3', '1 pending', 'amber');
+  Net.check(ctx);
+  out('s3', '1) (integer) 1   ← cook-1 has 1-0', 'out');
+  await Net.beat(ctx);
+  say('cook-2 <b>claims</b> it, cooks it, and confirms with <b>XACK</b>.');
+  type('s3', 'XCLAIM orders kitchen cook-2 0 1-0');
+  await send('st', 's3', 'entry 1-0', 'ok');
+  Net.check(ctx);
+  markE('st', '1-0', 'pend', 'pending · cook-2');
+  out('s3', 'cooking order 101… done', 'msg');
+  type('s3', 'XACK orders kitchen 1-0');
+  await send('s3', 'st', 'XACK', 'ok', 700);
+  Net.check(ctx);
+  out('s3', '(integer) 1');
+  markE('st', '1-0', 'done', '✓ acked');
+  verdict('s3', 'saved order 101', true);
+  await Net.beat(ctx);
+  say('<b>Stream wins.</b> An entry stays <b>pending until XACK</b>, so a crashed worker\'s job can be picked up by another one.', 'win');
+}
+
+// ================= Step 8: what it costs =================
+function setup8() {
+  compare(['OrderService', 'KitchenService', 'Stored in Redis'], { listen: 1, p2: true });
+  type('p2', 'SUBSCRIBE orders');
+  out('p2', 'Reading messages...', 'wait');
+  Net.set('p3', { label: 'Redis memory', sub: 'what Pub/Sub keeps' });
+  Net.set('s3', { label: 'Redis memory', sub: 'what the Stream keeps' });
+  setRows(PANEL[8], nothing + streamCard([{ id: '…', t: 'about the latest 1,000 entries' }], 'trimmed with MAXLEN'));
+}
+async function run8(ctx) {
+  say('Busy day: <b>1,000 orders</b>. What does each one leave behind in Redis?');
+  await Net.beat(ctx);
+  type('p1', 'PUBLISH orders …  (× 1000)');
+  type('s1', 'XADD orders * …  (× 1000)');
+  for (let k = 1; k <= 5; k++) {
+    await both([send('p1', 'ch', 'order', '', 450), send('s1', 'st', 'XADD', '', 450)]);
+    Net.check(ctx);
+    await send('ch', 'p2', 'order', 'ok', 350);
+    clear('p3');
+    out('p3', 'keys stored: 0', 'msg');
+    clear('s3');
+    out('s3', 'entries stored: ' + (k * 200).toLocaleString('en-IN'), k > 3 ? 'err' : 'out');
+    SE.st = [{ id: '…', t: (k * 200) + ' entries', s: '' }];
+    paintS('st');
+  }
+  verdict('p3', '0 bytes', true);
+  verdict('s3', 'grows forever');
+  say('<b>Pub/Sub</b> stored nothing. The <b>Stream</b> keeps every order in RAM, and keeps growing.', 'err');
+  await Net.beat(ctx);
+  say('The Stream fix: <b>MAXLEN</b> keeps only the latest N entries.');
+  type('s1', 'XADD orders MAXLEN ~ 1000 * …');
+  await send('s1', 'st', 'XADD MAXLEN', 'amber');
+  Net.check(ctx);
+  clear('s3');
+  out('s3', 'entries stored: about 1,000 (capped)', 'msg');
+  verdict('s3', 'capped', true);
+  await Net.beat(ctx);
+  say('<b>Pub/Sub wins on cost.</b> Nothing to store, nothing to trim, the lightest option. You pay for a Stream\'s safety in memory.', 'win');
+}
+
+// ================= Step 9: comparison table =================
+const ROWS = [
+  ['Message kept?', 'No: fire-and-forget', 'Yes, until trimmed', '3, 4'],
+  ['Reader was offline', 'Missed it', 'Reads on from its last id', '3'],
+  ['Nobody listening', 'Dropped (PUBLISH → 0)', 'Kept for later', '4'],
+  ['New reader joins late', 'Only future messages', 'Whole history (XRANGE)', '5'],
+  ['Several workers', 'Everyone gets everything', 'Consumer group splits it', '6'],
+  ['Worker crashes', 'Message lost', 'Pending until XACK, another worker claims it', '7'],
+  ['Cost', 'Nothing stored: lightest', 'Uses RAM, trim with MAXLEN', '8'],
+  ['Use it for', 'Live updates: "typing…", live scores, cache-clear signals', 'Orders, jobs, payment events, activity logs', '']
+];
+function tableHTML(shown, rule) {
+  return '<table class="score"><tr><th></th><th>Pub/Sub</th><th>Stream</th><th>Step</th></tr>'
+    + ROWS.map((r, i) => `<tr class="${i < shown ? '' : 'hide'}"><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')
+    + '</table>'
+    + (rule ? '<div class="rule"><b>Pub/Sub</b> = a live broadcast: fast, light, but if you missed it, it is gone.<br><b>Stream</b> = a written log: kept, replayable, shared between workers, confirmed with XACK.<br><b>Ask:</b> "Is it OK to lose this message?" Yes → Pub/Sub. No → Stream.</div>' : '');
+}
+function setup9() {
+  Net.node('board', { x: 500, y: 322, label: 'Pub/Sub vs Stream', kind: 'proxy', w: 940, body: tableHTML(0, false) });
+  $('#final').classList.add('hidden');
+}
+async function run9(ctx) {
+  say('Everything we proved, in one table.');
+  for (let i = 1; i <= ROWS.length; i++) {
+    await wait(ctx, 700);
+    Net.set('board', { body: tableHTML(i, false) });
+  }
+  await Net.beat(ctx, 1500);
+  Net.set('board', { body: tableHTML(ROWS.length, true) });
+  say('<b>One question decides it:</b> is it OK to lose this message?', 'win');
+}
+
+// ---------- the question before each step, and the answer after it ----------
+const QA = [
+  { q: 'The order service publishes one message. Two services are subscribed. Who gets it, and what does Redis keep?',
+    a: ['Every subscriber gets its <b>own copy</b>: one message, many receivers (<b>fan-out</b>).',
+        '<b>PUBLISH</b> replies with how many subscribers it reached (here 2).',
+        'Redis <b>stores nothing</b>: a channel is not a key, and KEYS * shows nothing.',
+        'The publisher does not know who listens. Adding an SMS service later = it just subscribes.'] },
+  { q: 'What if Redis wrote the order down instead of shouting it once?',
+    a: ['<b>XADD</b> appends the order to the stream <b>orders</b> and returns an <b>id</b> (time-sequence, like 1791497805767-0).',
+        '<b>XREAD BLOCK … $</b> waits for new entries, so readers get it live, like Pub/Sub.',
+        'But the entry <b>stays</b>: <b>XRANGE orders - +</b> reads the history any time.',
+        'The stream is a normal Redis key (TYPE orders → stream).'] },
+  { q: 'The email service restarts for 10 seconds while an order comes in. Does that customer get an email?',
+    a: ['<b>Pub/Sub: no.</b> The message went to whoever was listening at that instant. Email was offline, so it is gone forever.',
+        '<b>Stream: yes.</b> The entry was stored. When email comes back it reads on from the last id it saw: <b>XREAD STREAMS orders 1-0</b>.',
+        'This is what <b>fire-and-forget</b> means: Redis does not retry, store, or remember Pub/Sub messages.'],
+    win: 'Stream' },
+  { q: 'An order is published before any service has started. What happens to it?',
+    a: ['<b>Pub/Sub:</b> PUBLISH returns <b>0</b>. Nobody heard it, so it is dropped.',
+        '<b>Stream:</b> XADD stores it. XLEN shows 1, and any reader can pick it up later.',
+        'Pub/Sub needs the listener to be there <b>first</b>. A Stream does not.'],
+    win: 'Stream' },
+  { q: 'A new Analytics service starts at noon and wants every order from this morning. Can it get them?',
+    a: ['<b>Pub/Sub:</b> no. A new subscriber only sees messages from the moment it subscribes.',
+        '<b>Stream:</b> yes. <b>XRANGE orders - +</b> returns every entry from the first one.',
+        'A Stream is a <b>replayable history</b>; Pub/Sub has no past.'],
+    win: 'Stream' },
+  { q: 'Two cooks are working. Each order must be cooked exactly once. Who gets order 101?',
+    a: ['<b>Pub/Sub:</b> both cooks. Every subscriber gets every message, so 2 orders become 4 dishes.',
+        '<b>Stream + consumer group:</b> XGROUP CREATE orders kitchen 0, then each cook runs <b>XREADGROUP … ></b>.',
+        'Redis hands each entry to <b>one</b> member of the group: 101 to cook-1, 102 to cook-2.',
+        'Different groups (email, kitchen) still each get every order. Inside a group, the work is split.'],
+    win: 'Stream' },
+  { q: 'cook-1 takes order 101 and crashes before finishing. Will order 101 still be cooked?',
+    a: ['<b>Pub/Sub:</b> no. Redis forgot the message the moment it delivered it.',
+        '<b>Stream:</b> the entry is <b>pending</b> (handed out, not confirmed). <b>XPENDING</b> shows who holds it.',
+        'Another worker takes it with <b>XCLAIM</b>, finishes, and confirms with <b>XACK</b>.',
+        'Rule: a worker sends XACK only <b>after</b> the job is really done.'],
+    win: 'Stream' },
+  { q: 'After 1,000 orders, how much does each option leave in Redis?',
+    a: ['<b>Pub/Sub:</b> nothing. No key, no memory, nothing to clean up.',
+        '<b>Stream:</b> 1,000 entries in RAM, growing with every order.',
+        'Fix: <b>XADD orders MAXLEN ~ 1000 …</b> keeps only about the latest 1,000.',
+        'Safety costs memory. When you can afford to lose messages, Pub/Sub is the cheaper choice.'],
+    win: 'Pub/Sub' },
+  { q: 'When would you pick Pub/Sub, and when a Stream?',
+    a: ['<b>Pub/Sub:</b> live, throw-away updates: "Zoya is typing…", live scores, "clear your cache" signals to all servers.',
+        '<b>Stream:</b> anything that must not be lost: orders, jobs, payment events, activity logs.',
+        'The deciding question: <b>is it OK to lose this message?</b>',
+        'Streams are a small message queue. Kafka and RabbitMQ are built on the same ideas: a log, consumer groups, acks.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  const qa = QA[i];
+  $('#ansList').innerHTML = qa.a.map(t => `<li>${t}</li>`).join('') + (qa.win ? `<li class="best"><span>Winner</span>${qa.win}</li>` : '');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const ASK = '<span class="ask"><b>What the app needs:</b> ';
+Net.scenarios([
+  { label: '1 Pub/Sub', story: '<b>Use case:</b> A food app. When an order is placed, the email service and the kitchen must both hear about it.' + ASK + 'Tell every interested service, without the order service knowing who they are.</span>', setup: setup1, run: run1 },
+  { label: '2 Stream', story: '<b>Use case:</b> The same food app, but every order is written into a log in Redis.' + ASK + 'Tell every service, and keep a record of each order.</span>', setup: setup2, run: run2 },
+  { label: '3 Reader offline', story: '<b>Use case:</b> The email service is being redeployed. For 10 seconds it is down, and an order comes in.' + ASK + 'The customer must still get the confirmation email.</span>', setup: setup3, run: run3 },
+  { label: '4 Nobody listening', story: '<b>Use case:</b> Early morning: the order service is up, the other services have not started yet.' + ASK + 'Do not lose the first order of the day.</span>', setup: setup4, run: run4 },
+  { label: '5 Late joiner', story: '<b>Use case:</b> At noon the business adds an Analytics service.' + ASK + 'Count every order placed today, including this morning\'s.</span>', setup: setup5, run: run5 },
+  { label: '6 Share the work', story: '<b>Use case:</b> Lunch rush: the kitchen runs two cooks.' + ASK + 'Each order must be cooked exactly once.</span>', setup: setup6, run: run6 },
+  { label: '7 Worker crashes', story: '<b>Use case:</b> A cook takes an order and crashes before finishing it.' + ASK + 'The order must still be cooked.</span>', setup: setup7, run: run7 },
+  { label: '8 Cost', story: '<b>Use case:</b> A busy day with 1,000 orders.' + ASK + 'Keep Redis memory under control.</span>', setup: setup8, run: run8 },
+  { label: '9 Compare', story: '<b>Use case:</b> Everything side by side.' + ASK + 'Pick the right tool for a new feature.</span>', setup: setup9, run: run9 }
+], 'One food app, three terminals: first Pub/Sub, then Streams, then what really differs.');
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>
