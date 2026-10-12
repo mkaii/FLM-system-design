@@ -1,0 +1,51 @@
+Class 63: Redis Pub/Sub in Spring Boot
+
+Use case: a food app. An order is placed -> email, restaurant, delivery and analytics services all react.
+Five separate Spring Boot projects, one per microservice. All point to the same Redis (Docker, port 6379).
+Postman: order-pubsub.postman_collection.json
+Animation: animations/pubsub-springboot.html  (7 steps: sync API calls -> Pub/Sub -> publisher -> subscriber -> subscriber down -> add a service -> cheat sheet)
+Recap animation (from class 62): ../class-62-redis-pubsub/animations/messaging.html, step 1
+
+   Project              Port   Role        What it does
+   order-service        9010   publisher   POST /orders -> publishes the Order as JSON to channel "orders"
+   email-service        9011   subscriber  prints "sending confirmation to <customer>"
+   restaurant-service   9012   subscriber  prints "telling <restaurant> to start preparing"
+   delivery-service     9013   subscriber  prints "rider assigned: pick up from ..., deliver to ..."
+   analytics-service    9014   subscriber  counts orders today
+
+1. Recap and why  (5 min)
+   - Class 62: SUBSCRIBE / PUBLISH in redis-cli. Today: the same thing from Spring Boot.
+   - The order service should not call email, restaurant, delivery and analytics itself.
+     It announces "order placed"; whoever listens reacts.
+
+2. The publisher: order-service  (15 min)
+   - Dependency: spring-boot-starter-data-redis (same as class 61, nothing extra for Pub/Sub)
+   - application.properties: spring.data.redis.host / port
+   - Order.java: the payload (id, item, customer, restaurant, address)
+   - RedisConfig: a RedisTemplate with a JSON serializer (Order -> bytes), like class 61
+   - OrderPublisher: redisTemplate.convertAndSend("orders", order)   = PUBLISH orders '{...}'
+   - OrderController: POST /orders. The reply shows how many services heard it.
+   - No listener config here.
+
+3. A subscriber: email-service  (15 min)
+   - EmailListener implements MessageListener, overrides onMessage(Message message, byte[] pattern)
+   - In onMessage: bytes -> Order (JSON deserializer), then do the work
+   - RedisConfig: a RedisMessageListenerContainer: "channel orders -> EmailListener"   = SUBSCRIBE orders
+   - Its own copy of Order.java: services share the message format, not the code
+   - Redis calls it a "channel"; Spring's class is ChannelTopic
+   - The other three subscribers are the same shape with a different onMessage
+
+4. Demo  (10 min)
+   a. Start all 5. POST order 501 -> "Heard by 4 services"; each console prints its line
+   b. A redis-cli tab running SUBSCRIBE orders also sees the JSON (Redis does the fan-out, not Spring)
+        docker exec -it redis redis-cli
+   c. Stop email-service, POST order 502 -> "Heard by 3 services": that email is never sent
+
+5. API calls vs publishing a message  (10 min)
+   - API call: when you need the answer before continuing (check stock, charge the card)
+   - Publish: "tell whoever cares that this happened" (email, rider, analytics); the order does not wait
+   - Adding a 5th service (SMS): with API calls the order service changes; with Pub/Sub it does not
+
+6. The weakness, and next class  (5 min)
+   - Demo 4c again: a subscriber that is down never gets the message
+   - Next class: Redis Streams in Spring Boot, where the message is stored and nothing is lost

@@ -1,0 +1,27 @@
+{
+  "info": {
+    "name": "Class 62 - Redis Pub/Sub (order placed)",
+    "description": "Start all 5 services first. Each POST publishes one message; watch the console of every service.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Place order 501 (Pizza)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"id\": 501,\n  \"item\": \"Pizza\",\n  \"customer\": \"Zoya\",\n  \"restaurant\": \"Pizza Hut\",\n  \"address\": \"MG Road, Pune\"\n}" },
+        "url": { "raw": "http://localhost:9010/orders", "protocol": "http", "host": ["localhost"], "port": "9010", "path": ["orders"] }
+      }
+    },
+    {
+      "name": "2. Place order 502 (Burger) - stop email-service first",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"id\": 502,\n  \"item\": \"Burger\",\n  \"customer\": \"Aman\",\n  \"restaurant\": \"Burger King\",\n  \"address\": \"FC Road, Pune\"\n}" },
+        "url": { "raw": "http://localhost:9010/orders", "protocol": "http", "host": ["localhost"], "port": "9010", "path": ["orders"] }
+      }
+    }
+  ]
+}
