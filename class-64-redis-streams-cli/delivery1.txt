@@ -1,0 +1,7 @@
+Terminal 4: delivery1 (worker "delivery-1" in group "delivery")
+Start:  docker exec -it redis redis-cli
+
+14. XREADGROUP GROUP delivery delivery-1 STREAMS orders >
+        got both 501 and 502: a different group has its own bookmark
+        note: no COUNT, so everything after the bookmark comes at once
+        (never acknowledged, so both stay pending for the delivery group)

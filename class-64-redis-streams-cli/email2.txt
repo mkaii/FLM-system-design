@@ -1,0 +1,19 @@
+Terminal 3: email2 (worker "email-2" in group "email")
+Start:  docker exec -it redis redis-cli
+
+10. XREADGROUP GROUP email email-2 COUNT 1 STREAMS orders >
+        got 502 (1791860602316-0), not 501: same group, shared bookmark
+
+16. XACK orders email 1791860602316-0
+        (integer) 1                            mapping 502 -> email-2 removed
+        note: the last word is the entry ID, not the order number 502
+        note: reply 1 = one mapping removed. 0 = wrong ID, or already acknowledged
+
+23. XAUTOCLAIM orders email email-2 0 0
+        "0-0", then 501, then (empty array)    took 501 over from email-1
+        note: first 0 = pending for at least 0 ms, so "any". Real code: 60000
+        note: second 0 = start scanning the pending list from the beginning
+        note: reply "0-0" = the scan is finished. (empty array) = can be ignored
+
+25. XACK orders email 1791860519308-0
+        (integer) 1                            nothing pending for the group now

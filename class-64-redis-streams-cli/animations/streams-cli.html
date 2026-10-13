@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redis Streams in redis-cli</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+<style>
+/* the command, one word per column, with its meaning underneath */
+#cmdx { padding: 12px 16px 14px; border-bottom: 1px solid var(--line); min-height: 132px; }
+.cx-h { font: 11px "JetBrains Mono", ui-monospace, monospace; text-transform: lowercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 9px; }
+.cx-h b { color: #fff; font-weight: 600; border: 1px solid #666; border-radius: 999px; padding: 2px 9px; margin-right: 8px; }
+.cx { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.cx-none { color: var(--muted); font-size: 14px; padding: 26px 0; }
+.tk { flex: 1 1 0; min-width: min-content; max-width: 230px; }
+.tk code { display: block; font: 600 15px "JetBrains Mono", ui-monospace, monospace; color: #7d7d7d; background: #0f0f0f; border: 1px solid #333; border-radius: 8px; padding: 6px 10px; white-space: nowrap; text-align: center; transition: all .25s; }
+.tk span { display: block; margin-top: 6px; font-size: 12.5px; line-height: 1.35; color: #c4c4c4; text-align: center; opacity: 0; transition: opacity .3s; }
+.tk.on code { color: #fff; border-color: #777; }
+.tk.on span { opacity: 1; }
+.tk.w.on code { color: #8a8a8a; border-style: dashed; border-color: #555; }
+.tk.w span { color: #7d7d7d; }
+.tk.k.on code { background: #fff; color: #000; border-color: #fff; }
+.tk.k span { color: #fff; }
+.nd-badge { right: 8px; }
+.nd-badge.ok { background: #fff; color: #000; }
+/* a terminal window inside a box */
+.tw { font: 11.5px/1.4 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; background: #0c0c0c; border: 1px solid #333; border-radius: 7px; padding: 6px 9px; min-height: 40px; }
+#stage .tw div { white-space: pre-wrap; word-break: normal; overflow-wrap: break-word; }
+.tw .cmd { color: #fff; font-weight: 600; }
+.tw .cmd::before { content: '> '; color: #6e6e6e; }
+.tw .out { color: #9a9a9a; }
+.tw .msg { color: var(--good); font-weight: 600; }
+.tw .err { color: var(--bad); font-weight: 600; }
+.tw .wait { color: #6e6e6e; font-style: italic; }
+/* the stream: one row per entry, with each group's bookmark as a tag */
+.en { display: flex; align-items: center; gap: 6px; font: 12px/1.4 "JetBrains Mono", ui-monospace, monospace; text-align: left; padding: 5px 8px; margin: 4px 0; border: 1px solid #444; border-radius: 6px; white-space: nowrap; transition: all .35s; }
+.en b { color: var(--muted); font-weight: 500; }
+.en .f { flex: 1; }
+.en.start { border-style: dashed; color: var(--muted); }
+.en.new { border-color: var(--good); background: var(--good-bg); }
+.bm { font: 600 10.5px "JetBrains Mono", monospace; padding: 1px 7px; border-radius: 999px; border: 1px solid #fff; color: #fff; }
+.bm.d { border-style: dashed; color: var(--amber); border-color: var(--amber); }
+.bm.chg { background: #fff; color: #000; }
+.bm.d.chg { background: var(--amber); color: #000; }
+/* what Redis remembers for each group */
+.gc { border: 1px solid #444; border-radius: 8px; padding: 6px 9px; margin: 6px 0; text-align: left; font: 12px/1.5 "JetBrains Mono", ui-monospace, monospace; }
+.gc .gh { color: #fff; font-weight: 600; margin-bottom: 2px; }
+.gc .gh .bm { margin-right: 6px; }
+.gc .gl { display: flex; gap: 8px; align-items: baseline; padding: 2px 4px; border-radius: 5px; transition: background .4s; }
+.gc .gl > span { flex: none; width: 120px; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.gc .gl > div { flex: 1; color: #e6e6e6; white-space: nowrap; }
+.gc .gl.chg { background: #2f2f2f; outline: 1px solid #888; }
+.gc .no { color: #6e6e6e; }
+/* the commands of this step */
+.two { grid-template-columns: 1fr; }
+table.ct { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ct th { text-align: left; font: 11px "JetBrains Mono", monospace; text-transform: lowercase; letter-spacing: .06em; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid #444; font-weight: 400; }
+.ct td { padding: 8px 10px; border-bottom: 1px solid #262626; vertical-align: top; }
+.ct td.t { width: 60px; white-space: nowrap; }
+.ct td.t span { font: 600 11px "JetBrains Mono", monospace; padding: 2px 8px; border: 1px solid #666; border-radius: 999px; color: #fff; }
+.ct td.c { width: 50%; }
+.ct td.c code { font: 600 13px "JetBrains Mono", ui-monospace, monospace; color: #fff; background: #0f0f0f; border: 1px solid #444; border-radius: 7px; padding: 4px 9px; display: inline-block; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
+.ct td.c code:hover { border-color: #fff; }
+.ct td.m { color: #cfcfcf; line-height: 1.5; }
+.ct td.m b { color: #fff; font-weight: 500; font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+.ref { margin: 0 0 18px; }
+.ref .cx-h b { border: 0; padding: 0; font-size: 13px; text-transform: none; letter-spacing: 0; }
+.ref .tk code { color: #fff; border-color: #777; font-size: 13.5px; }
+.ref .tk span { opacity: 1; }
+.sheet { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+.sheet td, .sheet th { padding: 6px 10px; border-bottom: 1px solid #333; }
+.sheet th { font: 11px "JetBrains Mono", monospace; text-transform: lowercase; color: var(--muted); font-weight: 400; }
+.sheet td:first-child { font: 600 13px "JetBrains Mono", monospace; color: #fff; white-space: nowrap; }
+.sheet tr.hide { opacity: 0; }
+.sheet tr { transition: opacity .4s; }
+.setup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.setup .sl { font: 11px "JetBrains Mono", monospace; text-transform: lowercase; letter-spacing: .06em; padding: 2px 9px; border: 1px solid var(--dim); border-radius: 999px; }
+.setup b { color: var(--ink); font-weight: 500; }
+.setup code { font: 600 13.5px "JetBrains Mono", ui-monospace, monospace; color: #fff; background: #0f0f0f; border: 1px solid #555; border-radius: 8px; padding: 5px 11px; cursor: pointer; }
+.setup code:hover { border-color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Redis Streams in redis-cli</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="streams-cli.html">redis-cli</a><a href="../../class-65-redis-streams-springboot/animations/streams-springboot.html">Spring Boot (class 65)</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="setup">
+      <span class="sl">before class</span>
+      <span>Open <b>4 terminal tabs</b>. In each one run</span>
+      <code id="startCmd" title="click to copy">docker exec -it redis redis-cli</code>
+      <span>then in tab 1: <b>DEL orders</b></span>
+    </div>
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="cmdx"></div>
+    <div id="stage"></div>
+    <div class="two" id="final">
+      <div><div class="qt" id="codeT">The commands of this step (click to copy)</div><div id="code"></div></div>
+    </div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(644, 1.1);
+function copyOn(el, text) {
+  el.onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(text); const old = el.textContent; el.textContent = 'copied'; setTimeout(() => { el.textContent = old; }, 800); };
+}
+copyOn($('#startCmd'), 'docker exec -it redis redis-cli');
+
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 900 });
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+
+// ---------- terminals ----------
+const TERM = {};
+const WHO = { t1: ['T1', 'producer'], t2: ['T2', 'email-1'], t3: ['T3', 'email-2'], t4: ['T4', 'delivery-1'] };
+function term(id, x, y, max) {
+  TERM[id] = { lines: [], max };
+  Net.node(id, { x, y, label: 'Terminal ' + WHO[id][0].slice(1), sub: WHO[id][1], kind: 'client', w: 280, body: termHTML(id) });
+}
+function termHTML(id) {
+  const L = TERM[id].lines;
+  return '<div class="tw">' + (L.length ? L.map(l => `<div class="${l.c}">${esc(l.t)}</div>`).join('') : '<div class="wait">ready</div>') + '</div>';
+}
+function push(id, line) {
+  const t = TERM[id];
+  if (!t) return;
+  t.lines.push(line);
+  t.lines = t.lines.slice(-t.max);
+  Net.set(id, { body: termHTML(id) });
+}
+const out = (id, text, cls) => String(text).split('\n').forEach(t => push(id, { t, c: cls || 'out' }));
+const badge = (id, text, good) => Net.set(id, { badge: text, badgeCls: good ? 'ok' : 'bad' });
+
+// ---------- the command, word by word ----------
+const cmdText = tokens => tokens.map(k => k[0]).join(' ');
+const tokensHTML = (tokens, on) => '<div class="cx">' + tokens.map(k => `<div class="tk ${k[2] || ''} ${on ? 'on' : ''}"><code>${esc(k[0])}</code><span>${k[1]}</span></div>`).join('') + '</div>';
+function idleCmd(text) { $('#cmdx').innerHTML = `<div class="cx-none">${text || 'Each command will appear here, one word at a time.'}</div>`; }
+// types the command in a terminal and explains it. fast = a command already explained once.
+async function run(ctx, t, tokens, fast) {
+  push(t, { t: cmdText(tokens), c: 'cmd' });
+  Net.flash(t, 'ok');
+  $('#cmdx').innerHTML = `<div class="cx-h"><b>${WHO[t][0]}</b>${WHO[t][1]} types</div>` + tokensHTML(tokens, fast);
+  if (fast) { await wait(ctx, 700); return; }
+  const cols = document.querySelectorAll('#cmdx .tk');
+  for (const c of cols) { await wait(ctx, 430); c.classList.add('on'); }
+  await wait(ctx, 500);
+}
+
+const K = 'k', W = 'w';
+const C = {
+  xadd: (o, item, who) => [['XADD', 'add an entry at the end'], ['orders', 'the stream'], ['*', 'the entry ID: Redis makes it (time + counter)', K], ['id ' + o, 'field, value'], ['item ' + item, 'field, value'], ['customer ' + who, 'field, value']],
+  xlen: () => [['XLEN', 'count the entries'], ['orders', 'the stream']],
+  xrange: () => [['XRANGE', 'show entries, oldest first'], ['orders', 'the stream'], ['-', 'from the smallest ID'], ['+', 'to the largest ID']],
+  xgroup: g => [['XGROUP', 'about consumer groups'], ['CREATE', 'make a new one'], ['orders', 'on this stream'], [g, 'the group name'], ['0', 'bookmark starts before the first entry<br>($ = only new ones)', K]],
+  xinfo: () => [['XINFO', 'show information'], ['GROUPS', 'about the groups'], ['orders', 'of this stream']],
+  // mid: 'COUNT 1', 'BLOCK 0' or nothing. from: '>' or '0'
+  xread: (g, w, mid, from) => {
+    const t = [['XREADGROUP', 'read as a group member'], ['GROUP', 'keyword', W], [g, 'my group'], [w, 'my worker name']];
+    if (mid === 'COUNT 1') t.push(['COUNT 1', 'at most 1 entry']);
+    if (mid === 'BLOCK 0') t.push(['BLOCK 0', 'nothing there? wait.<br>0 = forever', K]);
+    t.push(['STREAMS', 'keyword', W], ['orders', 'the stream']);
+    t.push(from === '0' ? ['0', 'my own pending entries<br>(ignore the bookmark)', K] : ['>', 'entries after my group\'s bookmark', mid === 'BLOCK 0' ? '' : K]);
+    return t;
+  },
+  xpending: () => [['XPENDING', 'show the pending list'], ['orders', 'the stream'], ['email', 'of this group'], ['-', 'from the smallest ID'], ['+', 'to the largest ID'], ['10', 'at most 10 rows']],
+  xack: id => [['XACK', '"this entry is done"'], ['orders', 'the stream'], ['email', 'for this group only'], [id, 'the entry ID<br>(not the order number)', K]],
+  xclaim: () => [['XAUTOCLAIM', 'take over pending entries'], ['orders', 'the stream'], ['email', 'the group'], ['email-2', 'the new owner'], ['0', 'pending for at least 0 ms = any'], ['0', 'scan from the start of the list']]
+};
+
+// ---------- what Redis holds ----------
+const A = '1001-0', Bb = '1002-0', Cc = '1003-0';
+const ORD = { [A]: ['501', 'Pizza', 'Aman'], [Bb]: ['502', 'Burger', 'Riya'], [Cc]: ['503', 'Pasta', 'Sara'] };
+const row = id => `${id} · id ${ORD[id][0]} · ${ORD[id][1]}`;
+let S;
+const grp = (bm, pend) => ({ bm, pend });
+function preset(n) {
+  const e = n >= 1 ? [A, Bb] : [];
+  let g = null;
+  if (n === 2) g = { email: grp('0-0', []), delivery: grp('0-0', []) };
+  if (n === 3) g = { email: grp(Bb, [[A, 'email-1'], [Bb, 'email-2']]), delivery: grp('0-0', []) };
+  if (n >= 4) g = { email: grp(Bb, [[A, 'email-1'], [Bb, 'email-2']]), delivery: grp(Bb, [[A, 'delivery-1'], [Bb, 'delivery-1']]) };
+  if (n >= 5) g.email.pend = [[A, 'email-1']];
+  if (n >= 7) g.email.pend = [];
+  S = { entries: e, groups: g, fresh: '', hot: [] };
+}
+const tag = (g, at) => (S.groups && S.groups[g] && S.groups[g].bm === at) ? `<span class="bm ${g === 'delivery' ? 'd' : ''} ${S.hot.includes(g + '.bm') ? 'chg' : ''}">${g}</span>` : '';
+function streamHTML() {
+  let h = '';
+  if (S.groups && (S.groups.email.bm === '0-0' || S.groups.delivery.bm === '0-0')) h += `<div class="en start"><b>0-0</b><span class="f">start</span>${tag('email', '0-0')}${tag('delivery', '0-0')}</div>`;
+  if (!S.entries.length) h += '<div class="none">empty</div>';
+  S.entries.forEach(id => { h += `<div class="en ${S.fresh === id ? 'new' : ''}"><b>${id}</b><span class="f">${ORD[id][0]} · ${ORD[id][1]}</span>${tag('email', id)}${tag('delivery', id)}</div>`; });
+  return h;
+}
+function groupsHTML() {
+  if (!S.groups) return '<div class="none">no groups yet</div>';
+  return ['email', 'delivery'].map(g => {
+    const G = S.groups[g];
+    const pend = G.pend.length ? G.pend.map(p => `${p[0]} &rarr; ${p[1]}`).join('<br>') : '<span class="no">none</span>';
+    return `<div class="gc"><div class="gh"><span class="bm ${g === 'delivery' ? 'd' : ''}">${g}</span>group</div>`
+      + `<div class="gl ${S.hot.includes(g + '.bm') ? 'chg' : ''}"><span>last-delivered-id</span><div>${G.bm}</div></div>`
+      + `<div class="gl ${S.hot.includes(g + '.pend') ? 'chg' : ''}"><span>pending</span><div>${pend}</div></div></div>`;
+  }).join('');
+}
+// repaint the two Redis boxes; hot = the parts that just changed
+function paint(hot, fresh) {
+  S.hot = hot || [];
+  S.fresh = fresh || '';
+  Net.set('st', { body: streamHTML() });
+  Net.set('gr', { body: groupsHTML() });
+}
+
+// ---------- the stage: the same picture in every step ----------
+function stage(n) {
+  preset(n);
+  Net.group({ x: 690, y: 14, w: 300, h: 400, label: 'group: email' });
+  Net.group({ x: 690, y: 428, w: 300, h: 202, label: 'group: delivery' });
+  term('t1', 160, 322, 7);
+  term('t2', 840, 128, 3);
+  term('t3', 840, 312, 3);
+  term('t4', 840, 540, 3);
+  Net.node('st', { x: 495, y: 150, label: 'stream: orders', sub: 'tags show each group\'s bookmark', kind: 'lb', w: 346, body: streamHTML() });
+  Net.node('gr', { x: 495, y: 462, label: 'what Redis remembers per group', sub: 'stored inside the orders key', kind: 'db', w: 346, body: groupsHTML() });
+  Net.link('t1', 'st');
+  Net.link('st', 't2', { dashed: true });
+  Net.link('st', 't3', { dashed: true });
+  Net.link('st', 't4', { dashed: true });
+  idleCmd();
+}
+const INFO = () => ['email', 'delivery'].map(g => `${g}\n  last-delivered-id ${S.groups[g].bm}\n  pending ${S.groups[g].pend.length}`).join('\n');
+const PEND = () => S.groups.email.pend.length ? S.groups.email.pend.map(p => `${p[0]}  ${p[1]}`).join('\n') : '(empty array)';
+
+// rows under the stage: [terminal, command, where to look]
+function setRows(rows) {
+  let h = '<table class="ct"><tr><th>terminal</th><th>command</th><th>where to look</th></tr>';
+  rows.forEach(r => { h += `<tr><td class="t"><span>${r[0]}</span></td><td class="c"><code>${esc(r[1])}</code></td><td class="m">${r[2]}</td></tr>`; });
+  $('#code').innerHTML = h + '</table>';
+  $('#codeT').textContent = 'The commands of this step (click to copy)';
+  document.querySelectorAll('#code code').forEach(c => copyOn(c, c.textContent));
+}
+const RG = (g, w, rest) => `XREADGROUP GROUP ${g} ${w} ${rest}`;
+
+// ================= 1: add orders =================
+function setup1() {
+  stage(0);
+  setRows([
+    ['T1', 'XADD orders * id 501 item Pizza customer Aman', 'The reply is the <b>entry ID</b> Redis made. Yours is long, like 1791840312292-0'],
+    ['T1', 'XADD orders * id 502 item Burger customer Riya', 'A second, later ID'],
+    ['T1', 'XLEN orders', '<b>2</b>, with nobody listening'],
+    ['T1', 'XRANGE orders - +', 'Each entry: its ID, then the fields']
+  ]);
+}
+async function run1(ctx) {
+  say('Nobody is reading yet. T1 adds order 501.');
+  await run(ctx, 't1', C.xadd('501', 'Pizza', 'Aman'));
+  await send('t1', 'st', 'XADD');
+  Net.check(ctx);
+  S.entries.push(A); paint([], A);
+  out('t1', `"${A}"`);
+  say(`The reply <b>${A}</b> is the <b>entry ID</b>. Redis made it. (Real ones are long.)`);
+  await Net.beat(ctx);
+  say('A second order.');
+  await run(ctx, 't1', C.xadd('502', 'Burger', 'Riya'), true);
+  await send('t1', 'st', 'XADD');
+  Net.check(ctx);
+  S.entries.push(Bb); paint([], Bb);
+  out('t1', `"${Bb}"`);
+  await Net.beat(ctx);
+  say('How many entries does the stream hold?');
+  await run(ctx, 't1', C.xlen());
+  out('t1', '(integer) 2');
+  await Net.beat(ctx);
+  say('Show all of them.');
+  await run(ctx, 't1', C.xrange());
+  paint();
+  Net.flash('st', 'ok');
+  out('t1', row(A) + '\n' + row(Bb));
+  say('Both orders are <b>stored</b>, in order, with no reader. Pub/Sub would have lost them.', 'win');
+}
+
+// ================= 2: create groups =================
+function setup2() {
+  stage(1);
+  setRows([
+    ['T1', 'XGROUP CREATE orders email 0', '<b>OK</b>'],
+    ['T1', 'XGROUP CREATE orders delivery 0', '<b>OK</b>'],
+    ['T1', 'XINFO GROUPS orders', 'For each group: <b>last-delivered-id</b> is 0-0 (the bookmark), <b>pending</b> is 0']
+  ]);
+}
+async function run2(ctx) {
+  say('Two services will read this stream. Each one gets a <b>group</b>.');
+  await run(ctx, 't1', C.xgroup('email'));
+  S.groups = { email: grp('0-0', []) , delivery: null };
+  S.groups = { email: grp('0-0', []), delivery: { bm: '', pend: [] } };
+  paintGroupsOnly(['email.bm']);
+  out('t1', 'OK');
+  say('Group <b>email</b> exists. Its bookmark is at <b>0-0</b>: before the first entry.');
+  await Net.beat(ctx);
+  await run(ctx, 't1', C.xgroup('delivery'), true);
+  S.groups.delivery = grp('0-0', []);
+  paint(['delivery.bm']);
+  out('t1', 'OK');
+  say('Group <b>delivery</b> gets its <b>own</b> bookmark.');
+  await Net.beat(ctx);
+  say('Ask Redis what it remembers.');
+  await run(ctx, 't1', C.xinfo());
+  paint();
+  Net.flash('gr', 'ok');
+  out('t1', INFO());
+  say('A group is a record <b>inside Redis</b>: one bookmark and one pending list. No worker has read anything yet.', 'win');
+}
+// while only one group exists, draw just that one
+function paintGroupsOnly(hot) {
+  S.hot = hot;
+  const keep = S.groups;
+  const G = keep.email;
+  Net.set('st', { body: `<div class="en start"><b>0-0</b><span class="f">start</span><span class="bm chg">email</span></div>` + S.entries.map(id => `<div class="en"><b>${id}</b><span class="f">${ORD[id][0]} · ${ORD[id][1]}</span></div>`).join('') });
+  Net.set('gr', { body: `<div class="gc"><div class="gh"><span class="bm">email</span>group</div><div class="gl chg"><span>last-delivered-id</span><div>${G.bm}</div></div><div class="gl"><span>pending</span><div><span class="no">none</span></div></div></div>` });
+}
+
+// ================= 3: same group shares =================
+function setup3() {
+  stage(2);
+  setRows([
+    ['T2', RG('email', 'email-1', 'COUNT 1 STREAMS orders >'), 'It prints <b>501</b>'],
+    ['T3', RG('email', 'email-2', 'COUNT 1 STREAMS orders >'), 'It prints <b>502</b>, not 501'],
+    ['T1', 'XINFO GROUPS orders', 'In the email block: <b>last-delivered-id</b> is 502\'s ID, <b>pending</b> is 2. delivery is unchanged']
+  ]);
+}
+async function run3(ctx) {
+  say('Two copies of the email service, in the <b>same</b> group. email-1 asks for one order.');
+  await run(ctx, 't2', C.xread('email', 'email-1', 'COUNT 1', '>'));
+  Net.linkSet('st', 't2', { dashed: false });
+  await send('st', 't2', '501', 'ok');
+  Net.check(ctx);
+  out('t2', row(A), 'msg');
+  S.groups.email = grp(A, [[A, 'email-1']]);
+  paint(['email.bm', 'email.pend']);
+  say('email-1 gets <b>501</b>. The bookmark moves to it, and Redis notes <b>who has it</b>.');
+  await Net.beat(ctx, 3000);
+  say('Now email-2 asks, with the same command.');
+  await run(ctx, 't3', C.xread('email', 'email-2', 'COUNT 1', '>'), true);
+  Net.linkSet('st', 't3', { dashed: false });
+  await send('st', 't3', '502', 'ok');
+  Net.check(ctx);
+  out('t3', row(Bb), 'msg');
+  S.groups.email = grp(Bb, [[A, 'email-1'], [Bb, 'email-2']]);
+  paint(['email.bm', 'email.pend']);
+  say('email-2 gets <b>502</b>, not 501: 501 is already behind the bookmark.');
+  await Net.beat(ctx, 3000);
+  await run(ctx, 't1', C.xinfo(), true);
+  paint();
+  Net.flash('gr', 'ok');
+  out('t1', INFO());
+  say('<b>Same group = one shared bookmark.</b> Each order goes to one worker only.', 'win');
+}
+
+// ================= 4: another group gets everything =================
+function setup4() {
+  stage(3);
+  Net.linkSet('st', 't2', { dashed: false });
+  Net.linkSet('st', 't3', { dashed: false });
+  setRows([
+    ['T4', RG('delivery', 'delivery-1', 'STREAMS orders >'), 'It prints <b>both</b> 501 and 502'],
+    ['T1', 'XINFO GROUPS orders', 'Both blocks: <b>last-delivered-id</b> is 502\'s ID, <b>pending</b> is 2']
+  ]);
+}
+async function run4(ctx) {
+  say('The email group has taken both orders. Now the <b>delivery</b> service reads.');
+  await run(ctx, 't4', C.xread('delivery', 'delivery-1', '', '>'));
+  Net.linkSet('st', 't4', { dashed: false });
+  await send('st', 't4', '501', 'ok', 700);
+  Net.check(ctx);
+  out('t4', row(A), 'msg');
+  await send('st', 't4', '502', 'ok', 700);
+  Net.check(ctx);
+  out('t4', row(Bb), 'msg');
+  S.groups.delivery = grp(Bb, [[A, 'delivery-1'], [Bb, 'delivery-1']]);
+  paint(['delivery.bm', 'delivery.pend']);
+  say('delivery\'s bookmark was still at 0-0, so it gets <b>both</b>. No COUNT, so both come at once.');
+  await Net.beat(ctx, 3000);
+  await run(ctx, 't1', C.xinfo(), true);
+  paint();
+  Net.flash('gr', 'ok');
+  out('t1', INFO());
+  say('<b>Different group = its own bookmark</b> = its own copy of every order.', 'win');
+}
+
+// ================= 5: pending list and XACK =================
+function setup5() {
+  stage(4);
+  ['t2', 't3', 't4'].forEach(t => Net.linkSet('st', t, { dashed: false }));
+  setRows([
+    ['T1', 'XPENDING orders email - + 10', 'In each row: line 1 is the <b>entry ID</b>, line 2 is the <b>worker</b> holding it'],
+    ['T3', 'XACK orders email <502\'s ID>', '<b>(integer) 1</b> = one mapping removed'],
+    ['T1', 'XPENDING orders email - + 10', 'One row left: 501 with email-1'],
+    ['T1', 'XRANGE orders - +', '502 is <b>still there</b>']
+  ]);
+}
+async function run5(ctx) {
+  say('Redis handed out the orders. Does it know they were <b>finished</b>? Look at the pending list.');
+  await run(ctx, 't1', C.xpending());
+  paint(['email.pend']);
+  Net.flash('gr', 'ok');
+  out('t1', PEND());
+  say('<b>Pending</b> = given to a worker, not confirmed yet. Each row: entry ID, then who has it.');
+  await Net.beat(ctx, 3000);
+  say('email-2 has sent its email. It tells Redis.');
+  await run(ctx, 't3', C.xack(Bb));
+  await send('t3', 'gr', 'XACK', 'ok');
+  Net.check(ctx);
+  S.groups.email.pend = [[A, 'email-1']];
+  paint(['email.pend']);
+  out('t3', '(integer) 1');
+  say('The mapping <b>1002-0 &rarr; email-2</b> is removed. Reply 1 = one removed.');
+  await Net.beat(ctx, 3000);
+  await run(ctx, 't1', C.xpending(), true);
+  out('t1', PEND());
+  await Net.beat(ctx);
+  say('Is order 502 gone from the stream?');
+  await run(ctx, 't1', C.xrange(), true);
+  paint();
+  Net.flash('st', 'ok');
+  out('t1', row(A) + '\n' + row(Bb));
+  say('No. <b>XACK removes the mapping, not the entry.</b> The entry stays for other groups.', 'win');
+}
+
+// ================= 6: crash, then > and 0 =================
+function setup6() {
+  stage(5);
+  ['t2', 't3', 't4'].forEach(t => Net.linkSet('st', t, { dashed: false }));
+  setRows([
+    ['T2', RG('email', 'email-1', 'STREAMS orders >'), '<b>(nil)</b>: 501 is not given again'],
+    ['T2', RG('email', 'email-1', 'STREAMS orders 0'), 'It prints <b>501</b>']
+  ]);
+}
+async function run6(ctx) {
+  Net.set('t2', { state: 'down', badge: 'crashed', badgeCls: 'bad' });
+  paint(['email.pend']);
+  say('email-1 took 501 and <b>crashed</b> before XACK. The mapping is still there.', 'err');
+  await Net.beat(ctx, 3000);
+  Net.set('t2', { state: '', badge: 'restarted', badgeCls: 'ok' });
+  say('It restarts and asks for new orders, the usual way.');
+  await run(ctx, 't2', C.xread('email', 'email-1', '', '>'));
+  out('t2', '(nil)', 'err');
+  paint(['email.bm']);
+  say('<b>Nothing.</b> &gt; only looks after the bookmark, and 501 is behind it. 501 is stuck.', 'err');
+  await Net.beat(ctx, 3500);
+  say('Change one character: <b>0</b> instead of &gt;.');
+  await run(ctx, 't2', C.xread('email', 'email-1', '', '0'));
+  await send('st', 't2', '501', 'ok');
+  Net.check(ctx);
+  out('t2', row(A), 'msg');
+  paint(['email.pend']);
+  Net.set('t2', { badge: 'got 501 back', badgeCls: 'ok' });
+  say('<b>0 = "my own pending entries".</b> 501 is back. The mapping stays until email-1 sends XACK.', 'win');
+}
+
+// ================= 7: another worker takes over =================
+function setup7() {
+  stage(5);
+  ['t3', 't4'].forEach(t => Net.linkSet('st', t, { dashed: false }));
+  Net.set('t2', { state: 'down', badge: 'gone', badgeCls: 'bad' });
+  setRows([
+    ['T3', 'XAUTOCLAIM orders email email-2 0 0', 'First line <b>"0-0"</b> = scan finished. Below it: 501'],
+    ['T1', 'XPENDING orders email - + 10', 'Line 2 of the row now says <b>email-2</b>'],
+    ['T3', 'XACK orders email <501\'s ID>', '<b>(integer) 1</b>'],
+    ['T1', 'XPENDING orders email - + 10', '<b>(empty array)</b>']
+  ]);
+}
+async function run7(ctx) {
+  paint(['email.pend']);
+  say('This time email-1 does <b>not</b> come back. 501 is still mapped to it.', 'err');
+  await Net.beat(ctx, 3000);
+  say('email-2 takes over whatever is pending.');
+  await run(ctx, 't3', C.xclaim());
+  await send('st', 't3', '501', 'ok');
+  Net.check(ctx);
+  out('t3', '"0-0"\n' + row(A), 'msg');
+  S.groups.email.pend = [[A, 'email-2']];
+  paint(['email.pend']);
+  say('The mapping now reads <b>1001-0 &rarr; email-2</b>. In real code the first 0 would be 60000 (pending over a minute).');
+  await Net.beat(ctx, 3500);
+  await run(ctx, 't1', C.xpending(), true);
+  out('t1', PEND());
+  await Net.beat(ctx);
+  say('email-2 sends the email and confirms.');
+  await run(ctx, 't3', C.xack(A), true);
+  await send('t3', 'gr', 'XACK', 'ok');
+  Net.check(ctx);
+  S.groups.email.pend = [];
+  paint(['email.pend']);
+  out('t3', '(integer) 1');
+  await Net.beat(ctx);
+  await run(ctx, 't1', C.xpending(), true);
+  out('t1', PEND());
+  say('<b>Nothing pending.</b> A crash did not lose the order. But someone has to run the takeover.', 'win');
+}
+
+// ================= 8: waiting live =================
+function setup8() {
+  stage(7);
+  ['t3', 't4'].forEach(t => Net.linkSet('st', t, { dashed: false }));
+  setRows([
+    ['T2', RG('email', 'email-1', 'BLOCK 0 STREAMS orders >'), 'No prompt comes back: it is <b>waiting</b>'],
+    ['T1', 'XADD orders * id 503 item Pasta customer Sara', 'T2 prints <b>503</b> at once']
+  ]);
+}
+async function run8(ctx) {
+  say('So far every read returned at once. A real service <b>waits</b> for the next order.');
+  await run(ctx, 't2', C.xread('email', 'email-1', 'BLOCK 0', '>'));
+  Net.linkSet('st', 't2', { dashed: false });
+  out('t2', 'waiting…', 'wait');
+  Net.set('t2', { badge: 'waiting', badgeCls: '' });
+  say('No reply, no prompt: email-1 is <b>waiting</b>.');
+  await Net.beat(ctx, 3000);
+  say('T1 adds order 503.');
+  await run(ctx, 't1', C.xadd('503', 'Pasta', 'Sara'), true);
+  await send('t1', 'st', 'XADD');
+  Net.check(ctx);
+  S.entries.push(Cc); paint([], Cc);
+  out('t1', `"${Cc}"`);
+  await send('st', 't2', '503', 'ok', 700);
+  Net.check(ctx);
+  out('t2', row(Cc), 'msg');
+  S.groups.email = grp(Cc, [[Cc, 'email-1']]);
+  paint(['email.bm', 'email.pend'], Cc);
+  Net.set('t2', { badge: 'got 503', badgeCls: 'ok' });
+  say('It arrives the moment it is added: <b>live like Pub/Sub, but stored.</b> Spring\'s container runs this in a loop.', 'win');
+}
+
+// ================= 9: all the commands =================
+const SHEET = [
+  ['XADD', 'Add an entry. Reply: its ID'],
+  ['XLEN', 'How many entries'],
+  ['XRANGE', 'Show the entries'],
+  ['XGROUP CREATE', 'Make a group, with a starting bookmark'],
+  ['XINFO GROUPS', 'Each group\'s bookmark (last-delivered-id) and pending count'],
+  ['XREADGROUP … >', 'Give me new entries (after the bookmark)'],
+  ['XREADGROUP … 0', 'Give me my own pending entries'],
+  ['XPENDING', 'Which entry is with which worker'],
+  ['XACK', 'Done: remove the mapping'],
+  ['XAUTOCLAIM', 'Take over another worker\'s pending entries']
+];
+const sheetHTML = n => '<table class="sheet"><tr><th>command</th><th>in one line</th></tr>' + SHEET.map((r, i) => `<tr class="${i < n ? '' : 'hide'}"><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('') + '</table>';
+function setup9() {
+  Net.node('board', { x: 500, y: 322, label: 'Redis Streams: the commands', kind: 'proxy', w: 700, body: sheetHTML(0) });
+  idleCmd('Every command, word by word, is below.');
+  const all = [C.xadd('501', 'Pizza', 'Aman'), C.xlen(), C.xrange(), C.xgroup('email'), C.xinfo(), C.xread('email', 'email-1', 'COUNT 1', '>'), C.xread('email', 'email-1', '', '0'), C.xread('email', 'email-1', 'BLOCK 0', '>'), C.xpending(), C.xack('<entry ID>'), C.xclaim()];
+  $('#codeT').textContent = 'Every command, word by word';
+  $('#code').innerHTML = all.map(t => `<div class="ref"><div class="cx-h"><b>${esc(cmdText(t))}</b></div>${tokensHTML(t, true)}</div>`).join('');
+}
+async function run9(ctx) {
+  say('The ten commands from today.');
+  for (let i = 1; i <= SHEET.length; i++) {
+    await wait(ctx, 600);
+    Net.set('board', { body: sheetHTML(i) });
+  }
+  say('<b>Stream</b> = a stored log. <b>Group</b> = a bookmark + a pending list. <b>XACK</b> = done.', 'win');
+}
+
+// ---------- the question before each step, and the answer after it ----------
+const QA = [
+  { q: 'No service is running. An order is added. Is it lost?',
+    a: ['No. <b>XADD</b> stores it in the stream and replies with its <b>ID</b>.', 'The ID is time + counter, so entries are always in order.', '<b>XRANGE orders - +</b> shows everything, any time.'] },
+  { q: 'Where does Redis keep track of how far each service has read?',
+    a: ['In a <b>consumer group</b>: a record inside the stream key.', 'It holds a <b>bookmark</b> (last-delivered-id) and a <b>pending list</b>.', 'The <b>0</b> in XGROUP CREATE puts the bookmark before the first entry.'] },
+  { q: 'Two copies of the email service read the same stream. Who gets order 501?',
+    a: ['Only one of them. Both are in group <b>email</b>, so they share one bookmark.', '<b>&gt;</b> means "entries after my group\'s bookmark".', 'Each read moves the bookmark forward.'] },
+  { q: 'The email group already took both orders. Does delivery get any?',
+    a: ['Yes, both. <b>delivery</b> is a different group with its own bookmark.', 'Across groups: everyone gets a copy. Inside a group: one worker gets it.'] },
+  { q: 'After email-2 acknowledges order 502, is 502 deleted from the stream?',
+    a: ['No. <b>XACK</b> only removes the mapping "502 is with email-2".', '<b>Pending</b> = given to a worker, not yet confirmed.', 'The entry itself stays in the stream.'] },
+  { q: 'email-1 crashed before XACK. After a restart, does it get 501 again?',
+    a: ['Not with <b>&gt;</b>: 501 is behind the bookmark, so the reply is (nil).', 'With <b>0</b> it gets its own pending entries back.', 'It must restart with the <b>same worker name</b>.'] },
+  { q: 'email-1 never comes back. How does order 501 get its email?',
+    a: ['<b>XAUTOCLAIM</b>: another worker takes over entries pending too long.', 'The mapping changes to the new worker.', 'Redis does not do this by itself: your code must run it.'] },
+  { q: 'How does a service get an order the moment it is added?',
+    a: ['<b>BLOCK 0</b>: wait until there is something, forever.', 'In redis-cli it returns once. A service repeats it in a loop.'] },
+  { q: 'Which two things does a consumer group remember?',
+    a: ['A <b>bookmark</b>: the last entry handed out.', 'A <b>pending list</b>: handed out, not acknowledged.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  $('#ansList').innerHTML = QA[i].a.map(t => `<li>${t}</li>`).join('');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const U = t => `<b>Use case:</b> ${t}`;
+Net.scenarios([
+  { label: '1 Add orders', story: U('Orders come in before any service has started.'), setup: setup1, run: run1 },
+  { label: '2 Create groups', story: U('Two services, email and delivery, will read the orders.'), setup: setup2, run: run2 },
+  { label: '3 Same group', story: U('The email service runs as two copies. Each order needs one email.'), setup: setup3, run: run3 },
+  { label: '4 Another group', story: U('The delivery service needs every order too.'), setup: setup4, run: run4 },
+  { label: '5 Pending + XACK', story: U('Redis should know which orders were really handled.'), setup: setup5, run: run5 },
+  { label: '6 Crash: > vs 0', story: U('A worker crashes after taking an order, then restarts.'), setup: setup6, run: run6 },
+  { label: '7 Take over', story: U('A worker crashes and never comes back.'), setup: setup7, run: run7 },
+  { label: '8 Wait live', story: U('A service should react the moment an order is placed.'), setup: setup8, run: run8 },
+  { label: '9 All commands', story: U('Everything on one page.'), setup: setup9, run: run9 }
+], 'One stream, four terminals.');
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>

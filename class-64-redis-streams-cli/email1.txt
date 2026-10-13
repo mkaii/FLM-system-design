@@ -1,0 +1,28 @@
+Terminal 2: email1 (worker "email-1" in group "email")
+Start:  docker exec -it redis redis-cli
+
+ 8. XREADGROUP GROUP email email-1 COUNT 1 STREAMS orders >
+        got 501 (1791860519308-0). Never acknowledged: this is our "crash"
+        note: > = entries after my group's bookmark (never given to anyone in the group)
+        note: COUNT 1 = at most one entry. Without it email-1 would take 501 and 502
+        note: GROUP and STREAMS are just keywords: "group and name follow", "stream and start point follow"
+
+21. XREADGROUP GROUP email email-1 STREAMS orders >
+        (nil)                                  501 is behind the bookmark
+
+22. XREADGROUP GROUP email email-1 STREAMS orders 0
+        got 501 back                           0 = my own pending entries
+        note: here 0 is an ID, in the place where > was. It ignores the bookmark
+        note: it works only for the same worker name (email-1)
+
+27. XREADGROUP GROUP email email-1 STREAMS orders >
+        (nil)
+
+28. XREADGROUP GROUP email email-1 STREAMS orders 0
+        "orders", (empty array)                nothing pending for email-1 any more:
+                                               email-2 took 501 over and acknowledged it
+
+31. XREADGROUP GROUP email email-1 BLOCK 0 STREAMS orders >
+note:         waited 30.19 s, then printed 503 (1791863170898-0) when prod ran step 32
+        (503 was not acknowledged, so it is pending with email-1)
+        note: BLOCK 0: this 0 is a time in ms. 0 = wait forever. It is not an ID

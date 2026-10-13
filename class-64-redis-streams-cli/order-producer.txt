@@ -1,0 +1,55 @@
+Terminal 1: prod (the producer, and the one who inspects Redis)
+Start:  docker exec -it redis redis-cli
+The step numbers run across all four files: follow them in order.
+
+ 1. DEL orders
+        start clean
+
+ 2. XADD orders * id 501 item Pizza customer Aman
+        add order 501. The reply is the entry ID Redis made (501's ID)
+
+ 3. XADD orders * id 502 item Burger customer Riya
+        add order 502. The reply is 502's ID
+
+ 4. XLEN orders
+        2 entries stored, with nobody reading
+
+ 5. XRANGE orders - +
+        the whole stream: each ID, then its fields
+
+ 6. XGROUP CREATE orders email 0
+        group "email", bookmark before the first entry
+
+ 7. XGROUP CREATE orders delivery 0
+        group "delivery", with its own bookmark
+
+ 8. XINFO GROUPS orders
+        last-delivered-id = 0-0 (the bookmark), pending = 0, lag = 2
+
+10. XINFO GROUPS orders
+        email block: last-delivered-id = 501's ID, pending = 1, lag = 1
+
+13. XINFO GROUPS orders
+        both blocks: last-delivered-id = 502's ID, pending = 2, lag = 0
+
+14. XPENDING orders email - + 10
+        two rows: 501 with email-1, 502 with email-2
+
+16. XPENDING orders email - + 10
+        one row left: 501 with email-1
+
+17. XRANGE orders - +
+        502 is still in the stream. XACK removed the mapping, not the entry
+
+21. XPENDING orders email - + 10
+        the row now says email-2 (it took 501 over)
+
+23. XPENDING orders email - + 10
+        (empty array)
+
+24. XINFO GROUPS orders
+        email: pending = 0, last-delivered-id is still 502's ID
+        (claiming and acknowledging never move the bookmark)
+
+27. XADD orders * id 503 item Pasta customer Sara
+        email1 is waiting (step 26) and prints 503 at once

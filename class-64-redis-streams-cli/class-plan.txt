@@ -1,0 +1,66 @@
+Class 64: Redis Streams in redis-cli
+
+Four terminals, one stream "orders", two groups. No Spring Boot (that is class 65).
+Start each terminal with:  docker exec -it redis redis-cli
+Animation: animations/streams-cli.html  (9 steps, each command explained word by word)
+
+   File            Terminal   Who                                  Group
+   prod.txt        1          producer, also inspects Redis        none
+   email1.txt      2          worker email-1                       email
+   email2.txt      3          worker email-2                       email
+   delivery1.txt   4          worker delivery-1                    delivery
+
+The four files are the record of the class, rebuilt from the terminal scrollback.
+Steps are numbered 1 to 32 across all files. Where two terminals could have gone in either order, the order is a best guess.
+
+1. The order is stored  (steps 1-4)
+   - XADD returns an entry ID (time in ms + counter). XLEN, XRANGE show it is kept with nobody reading.
+   - A stream is an ordered log: add at the end only, entries cannot be edited.
+
+2. Consumer groups  (steps 5-7)
+   - A group is a record inside the orders key: a bookmark (last-delivered-id) and a pending list.
+   - The 0 in XGROUP CREATE = bookmark before the first entry. $ = only entries added from now on.
+
+3. Same group shares, another group gets all  (steps 8-15)
+   - email-1 and email-2 share one bookmark: 501 goes to one, 502 to the other.
+   - delivery has its own bookmark: it gets both.
+   - ">" = entries after my group's bookmark.
+
+4. Pending list and XACK  (steps 13-19)
+   - Pending = given to a worker, not acknowledged. XPENDING shows entry -> worker.
+   - XACK removes the mapping, not the entry.
+
+5. Crash and rescue  (steps 20-28)
+   - After a "crash", ">" returns (nil): the entry is behind the bookmark.
+   - "0" instead of ">" = my own pending entries.
+   - XAUTOCLAIM: another worker takes the entry over. The bookmark does not move.
+   - A retry can repeat work that was done just before the crash: "at least once".
+
+6. Waiting live  (steps 31-32)
+   - BLOCK 0 = wait until something arrives. A real service repeats this in a loop.
+
+The confusing symbols
+   Symbol       Where                     Meaning
+   *            XADD                      Redis makes the entry ID (time in ms + counter)
+   - +          XRANGE, XPENDING          smallest ID to largest ID = everything
+   0            XGROUP CREATE             the bookmark starts before the first entry
+   $            XGROUP CREATE             the bookmark starts at the end: only new entries
+   >            XREADGROUP (last word)    entries after my group's bookmark
+   0            XREADGROUP (last word)    my own pending entries, ignoring the bookmark
+   0            after BLOCK               a time in ms: wait forever
+   0 0          XAUTOCLAIM                pending for at least 0 ms, scan from the start of the list
+   0-0          XINFO GROUPS reply        bookmark not moved yet
+   0-0          XAUTOCLAIM reply          scan finished
+   The same character 0 means four different things: look at which word comes before it.
+
+Questions that came up
+   - XPENDING showed 501 "given 3 times": the first read, the re-read with 0, and the XAUTOCLAIM each count.
+   - delivery-1 never sent XACK, so the delivery group still shows pending 2.
+   - lag = entries in the stream the group has not been given yet. entries-read = how many it has been given.
+   - An acknowledged entry cannot be read through the group again (not with > and not with 0).
+     It is still in the stream: XRANGE orders - + shows it. XGROUP SETID orders email 0 rewinds the bookmark.
+   - A group belongs to one stream. For a payments stream, create a group there too (it may also be named email):
+       XGROUP CREATE payments email 0 MKSTREAM
+       XREADGROUP GROUP email email-1 STREAMS orders payments > >
+
+Next class: the same thing from Spring Boot (class-65-redis-streams-springboot).

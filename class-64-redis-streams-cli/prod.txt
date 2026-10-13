@@ -1,0 +1,82 @@
+Terminal 1: prod (the producer, and the one who inspects Redis)
+Start:  docker exec -it redis redis-cli
+Rebuilt from the terminal scrollback of the class. Step numbers run across all four files.
+501's ID = 1791860519308-0      502's ID = 1791860602316-0      503's ID = 1791863170898-0
+(A first practice attempt was wiped with DEL orders before this run.)
+
+ 1. XADD orders * id 501 item Pizza customer Aman
+        "1791860519308-0"                      the entry ID Redis made
+        note: * = "Redis, make the ID": time in ms, a dash, a counter. Not random, always increasing
+        note: id 501 is our own field (the order number), not the entry ID
+
+ 2. XADD orders * id 502 item Burger customer Riya
+        "1791860602316-0"
+
+ 3. XLEN orders
+        (integer) 2                            stored, with nobody reading
+
+ 4. XRANGE orders - +
+        both entries: ID, then id / item / customer
+        note: - = smallest possible ID, + = largest. Together: everything
+
+ 5. XGROUP CREATE orders email 0
+        OK
+        note: this 0 = where the bookmark starts: before the first entry, so the group also gets 501 and 502
+        note: $ instead of 0 = only entries added from now on
+
+ 6. XGROUP CREATE orders delivery 0
+        OK
+
+ 7. XINFO GROUPS orders
+        both groups: consumers 0, pending 0, last-delivered-id 0-0, entries-read (nil), lag 2
+        note: last-delivered-id is the bookmark. 0-0 = nothing handed out yet
+        note: lag = entries the group has not been given yet
+
+ 9. XINFO GROUPS orders                        (after email-1 read 501)
+        email: consumers 1, pending 1, last-delivered-id 1791860519308-0, entries-read 1, lag 1
+        delivery: unchanged
+
+11. XINFO GROUPS orders                        (after email-2 read 502)
+        email: consumers 2, pending 2, last-delivered-id 1791860602316-0, entries-read 2, lag 0
+        delivery: still 0-0, lag 2
+
+12. XRANGE orders - +
+        both entries still there
+
+13. XPENDING orders email - + 10
+        1791860519308-0  email-1  given 1 time
+        1791860602316-0  email-2  given 1 time
+        note: - + = all of them, 10 = show at most 10 rows
+        note: each row: entry ID, worker, ms since it was handed out, times handed out
+
+15. XINFO GROUPS orders                        (after delivery-1 read both)
+        delivery: consumers 1, pending 2, last-delivered-id 1791860602316-0, lag 0
+
+17. XINFO GROUPS orders                        (after email-2 acknowledged 502)
+        email: pending 1. last-delivered-id did not change
+
+18. XPENDING orders email - + 10
+        1791860519308-0  email-1  given 1 time
+
+19. XRANGE orders - +
+        502 is still in the stream: XACK removed the mapping, not the entry
+
+20. XPENDING orders email - + 10
+        1791860519308-0  email-1  given 1 time  (idle about 17 minutes)
+
+24. XPENDING orders email - + 10               (after the takeover)
+        1791860519308-0  email-2  given 3 times
+        3 = first read by email-1, its re-read with 0, the XAUTOCLAIM
+
+26. XPENDING orders email - + 10               (after email-2 acknowledged 501)
+        (empty array)
+
+29. XRANGE orders - +
+        both entries still there
+
+30. XINFO GROUPS orders
+        email: pending 0, last-delivered-id still 1791860602316-0
+        delivery: pending 2 (delivery-1 never sent XACK)
+
+32. XADD orders * id 503 item Pasta customer Sara
+        "1791863170898-0"                      email1 was waiting (step 31) and printed it
