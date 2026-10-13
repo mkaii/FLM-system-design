@@ -1,0 +1,36 @@
+{
+  "info": {
+    "name": "Class 65 - Redis Streams (order placed)",
+    "description": "order-service runs on port 9020. Each POST adds one entry to the stream 'orders'. Watch the console of email-service and delivery-service.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Place order 501 (Pizza) - everyone is up",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"id\": 501,\n  \"item\": \"Pizza\",\n  \"customer\": \"Zoya\",\n  \"restaurant\": \"Pizza Hut\",\n  \"address\": \"MG Road, Pune\"\n}" },
+        "url": { "raw": "http://localhost:9020/orders", "protocol": "http", "host": ["localhost"], "port": "9020", "path": ["orders"] }
+      }
+    },
+    {
+      "name": "2. Place order 502 (Burger) - stop email-service first, then start it again",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"id\": 502,\n  \"item\": \"Burger\",\n  \"customer\": \"Aman\",\n  \"restaurant\": \"Burger King\",\n  \"address\": \"FC Road, Pune\"\n}" },
+        "url": { "raw": "http://localhost:9020/orders", "protocol": "http", "host": ["localhost"], "port": "9020", "path": ["orders"] }
+      }
+    },
+    {
+      "name": "3. Place order 503 (Pasta) - send a few times with two copies of email-service running",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"id\": 503,\n  \"item\": \"Pasta\",\n  \"customer\": \"Om\",\n  \"restaurant\": \"Olive Garden\",\n  \"address\": \"Baner, Pune\"\n}" },
+        "url": { "raw": "http://localhost:9020/orders", "protocol": "http", "host": ["localhost"], "port": "9020", "path": ["orders"] }
+      }
+    }
+  ]
+}

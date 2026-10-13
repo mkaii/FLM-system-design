@@ -1,0 +1,60 @@
+Class 65: Redis Streams in Spring Boot
+
+Use case: the same food app as class 63. An order is placed -> email and delivery services react.
+Difference from class 63: the order is WRITTEN DOWN in a stream, so a service that is down gets it later.
+Three separate Spring Boot projects. All point to the same Redis (Docker, port 6379).
+Postman: order-streams.postman_collection.json
+Animation: animations/streams-springboot.html  (7 steps)
+Recap animation (class 64, redis-cli): ../class-64-redis-streams-cli/animations/streams-cli.html
+Before class, in redis-cli:  DEL orders     (removes any old "orders" stream from practice)
+
+   Project            Port   Role       What it does
+   order-service      9020   producer   POST /orders -> adds the order to the stream "orders" (XADD)
+   email-service      9021   consumer   group "email":    prints "sending confirmation to <customer>", then XACK
+   delivery-service   9022   consumer   group "delivery": prints "rider assigned ...", then XACK
+
+1. Recap the weakness  (5 min)
+   - Class 63, Pub/Sub: email-service was down for order 502 -> that email was never sent
+   - Today: the same order, but nothing is lost
+
+2. Streams recap in redis-cli (done in class 64)  (5 min)      docker exec -it redis redis-cli
+   XADD orders * id 501 item Pizza          -> stored, gets an id
+   XRANGE orders - +                        -> the history
+   XGROUP CREATE orders email 0 MKSTREAM    -> a consumer group
+   XREADGROUP GROUP email email-1 COUNT 1 STREAMS orders >
+   XACK orders email <id>
+
+3. The producer: order-service  (15 min)
+   - No RedisConfig at all: a stream entry is text fields, and Spring's StringRedisTemplate handles text
+   - OrderPublisher: put the Order's fields in a Map, then
+       redisTemplate.opsForStream().add("orders", fields)      = XADD orders * id 501 item Pizza ...
+   - The reply is the entry id; the controller returns it
+   - Open Redis Insight (localhost:8001): "orders" is a real key of type stream, with the entries visible
+     (a Pub/Sub channel never showed up there)
+
+4. A consumer: email-service  (20 min)
+   - EmailListener implements StreamListener, overrides onMessage(record)
+       1. fields -> Order      2. do the work      3. acknowledge(...)   = XACK
+   - RedisConfig:
+       1. createGroup("orders", ReadOffset.from("0"), "email")     = XGROUP CREATE orders email 0 MKSTREAM
+       2. StreamMessageListenerContainer.create(connectionFactory)
+       3. container.receive(Consumer.from("email", consumerName),
+                            StreamOffset.create("orders", ReadOffset.lastConsumed()), emailListener)
+                                                                   = XREADGROUP GROUP email email-1 STREAMS orders >
+       4. container.start()
+   - app.consumer-name in application.properties: this copy's name inside the group
+   - delivery-service is the same shape, with group "delivery"
+
+5. Demos  (10 min)
+   a. Everyone up, POST order 501 -> email and delivery both print
+   b. Stop email-service, POST order 502 -> only delivery prints.
+      Start email-service again -> it prints order 502.  (In class 63 this email was lost.)
+   c. Run a second copy of email-service:
+        ./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=9023 --app.consumer-name=email-2"
+      POST a few orders -> each order is handled by only ONE of the two copies
+   d. redis-cli:  XLEN orders   and   XPENDING orders email  -> 0 pending: everything was acknowledged
+
+6. Pub/Sub vs Streams, and wrap-up  (5 min)
+   - Pub/Sub: live broadcast, nothing stored, lightest. OK to lose the message.
+   - Streams: stored, read later, shared between copies of a service, confirmed with XACK.
+   - Not covered in code: taking over a crashed consumer's unfinished entries (XPENDING / XCLAIM), done by hand in class 64

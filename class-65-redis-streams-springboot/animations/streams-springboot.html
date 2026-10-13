@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streams in Spring Boot</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+<style>
+.ln { font: 11.5px/1.5 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 17px; color: var(--muted); }
+.ln.ok { color: var(--good); font-weight: 600; }
+.ln.bad { color: var(--bad); font-weight: 600; }
+.pay { font: 11.5px/1.45 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; white-space: pre; padding: 6px 8px; border: 1px solid #444; border-radius: 6px; background: #0c0c0c; color: #d6d6d6; }
+.pay.new { border-color: var(--good); }
+.se { font: 11.5px/1.4 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; padding: 3px 8px; margin: 3px 0; border: 1px solid #444; border-radius: 6px; white-space: nowrap; }
+.se b { color: var(--muted); font-weight: 500; margin-right: 6px; }
+.se.new { border-color: var(--good); color: var(--good); }
+.se.pend { border-style: dashed; border-color: var(--amber); }
+.grpl { font: 11px/1.5 "JetBrains Mono", monospace; text-align: left; color: var(--muted); margin-top: 4px; white-space: normal; }
+.grpl.warn { color: var(--bad); font-weight: 600; }
+.code { margin: 0; padding: 12px 14px; border-radius: 9px; font: 12.5px/1.55 "JetBrains Mono", ui-monospace, Menlo, monospace; white-space: pre; overflow-x: auto; background: #0f0f0f; border: 1px solid #3a3a3a; color: #d6d6d6; }
+.code .an { color: #ffffff; font-weight: 600; }
+.code .cm { color: #6e6e6e; }
+.score { font-size: 14px; }
+.score td { padding: 6px 10px; white-space: normal; }
+.score th { padding: 4px 10px; }
+.rule { margin-top: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Redis Streams in Spring Boot</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="streams-springboot.html">Animation</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final">
+      <div><div class="qt" id="t1">Java code for this step</div><pre class="code" id="code"></pre></div>
+      <div><div class="qt t" id="t2">What you see</div><div id="endView"></div></div>
+    </div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(500, 1.1);
+
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 900 });
+const lost = (a, b, label) => Net.send(a, b, { label, cls: 'bad', dur: 900, stopAt: 0.6 });
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+const big = (v, unit) => `<div class="big">${v}${unit ? `<small>${unit}</small>` : ''}</div>`;
+const setC = (id, v, unit, state) => Net.set(id, { body: big(v, unit), state: state || '' });
+const line = (id, text, cls) => Net.set(id, { body: `<div class="ln ${cls || ''}">${esc(text)}</div>` });
+
+// ---------- the stream, drawn inside the Redis box ----------
+let ENT = [], GRP = [];
+function stHTML() {
+  const e = ENT.length ? ENT.map(x => `<div class="se ${x.s || ''}"><b>${x.id}</b>${x.t}</div>`).join('') : '<div class="none">empty</div>';
+  const g = GRP.map(x => `<div class="grpl ${x.warn ? 'warn' : ''}">group ${x.name}: ${x.note}</div>`).join('');
+  return e + (ENT.length ? `<div class="none">${ENT.length} stored</div>` : '') + g;
+}
+const paintS = () => Net.set('st', { body: stHTML() });
+function addE(id, t) { ENT.forEach(x => { if (x.s === 'new') x.s = ''; }); ENT.push({ id, t, s: 'new' }); paintS(); }
+function grp(name, note, warn) { const g = GRP.find(x => x.name === name); if (g) { g.note = note; g.warn = warn; } else GRP.push({ name, note, warn }); paintS(); }
+
+// ---------- layout for the "whole system" steps ----------
+// o.channel: Redis is a Pub/Sub channel (the class 63 recap);  o.subs: the services on the right
+function system(o) {
+  ENT = (o.entries || []).map(x => ({ id: x[0], t: x[1], s: '' }));
+  GRP = (o.groups || []).map(x => ({ name: x[0], note: x[1] }));
+  Net.node('pm', { x: 75, y: 250, label: 'Postman', sub: 'POST /orders', kind: 'client', w: 130 });
+  Net.node('os', { x: 250, y: 250, label: 'order-service', sub: o.channel ? 'publisher' : ':9020 · producer', kind: 'proxy', w: 170 });
+  Net.node('st', { x: 515, y: 250, label: 'Redis', sub: o.channel ? 'channel: orders' : 'stream: orders', kind: 'lb', w: 250, body: o.channel ? '<div class="none">stores nothing</div>' : stHTML() });
+  Net.link('pm', 'os'); Net.link('os', 'st');
+  const n = o.subs.length, gap = n === 3 ? 135 : 170, top = 250 - gap * (n - 1) / 2;
+  o.subs.forEach((s, i) => {
+    Net.node(s[0], { x: 835, y: top + i * gap, label: s[1], sub: s[2], kind: 'client', w: 290, body: `<div class="ln">${s[3] || 'waiting…'}</div>` });
+    Net.link('st', s[0]);
+  });
+  Net.node('c1', { x: 250, y: 420, label: o.c1, kind: 'count', w: 190, body: big('–') });
+}
+
+// ---------- bottom panels ----------
+const C = (cls, t) => `<span class="${cls}">${esc(t)}</span>`;
+function setPanel(code, right, t1, t2) {
+  $('#code').innerHTML = code;
+  $('#endView').innerHTML = right;
+  $('#t1').textContent = t1 || 'Java code for this step';
+  $('#t2').textContent = t2 || 'What you see';
+  $('#final').classList.remove('hidden');
+}
+const consoleCard = lines => '<div class="kc"><div class="kb">' + lines.map(l => `<div class="ln ${l[1] || ''}" style="white-space:normal">${esc(l[0])}</div>`).join('') + '</div></div>';
+const table = (head, rows) => '<table class="score"><tr>' + head.map(h => `<th>${h}</th>`).join('') + '</tr>' + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</table>';
+
+// ================= Step 1: what Pub/Sub lost (class 63) =================
+function setup1() {
+  system({ channel: true, c1: 'Emails sent for order 502',
+    subs: [['em', 'email-service', 'subscriber', 'subscribed to "orders"'], ['dl', 'delivery-service', 'subscriber', 'subscribed to "orders"']] });
+  setPanel(
+    C('cm', '// class 63: order-service published to a channel') + '\n'
+    + 'redisTemplate.convertAndSend("orders", order);   ' + C('cm', '// PUBLISH orders {...}') + '\n\n'
+    + C('cm', '// Redis handed the message to whoever was listening at that moment,') + '\n'
+    + C('cm', '// and kept nothing.'),
+    consoleCard([['Postman:  Order 502 placed. Heard by 1 services.', 'bad'], ['DELIVERY SERVICE -> rider assigned for order 502'], ['EMAIL SERVICE    -> (nothing, even after it restarts)', 'bad']]),
+    'Class 63 code', 'What happened in class 63');
+}
+async function run1(ctx) {
+  say('Last class, with <b>Pub/Sub</b>. Both services are listening. Then <b>email-service goes down</b>.');
+  await Net.beat(ctx);
+  Net.set('em', { state: 'down', badge: 'down', badgeCls: 'bad' });
+  line('em', 'not running');
+  await Net.beat(ctx, 1500);
+  say('Aman orders a burger: order 502.');
+  await send('pm', 'os', 'POST /orders');
+  await send('os', 'st', 'PUBLISH orders', 'teal');
+  Net.check(ctx);
+  await Promise.all([lost('st', 'em', 'order 502'), send('st', 'dl', 'order 502', 'ok')]);
+  Net.check(ctx);
+  line('dl', 'rider assigned for order 502', 'ok');
+  await Net.beat(ctx);
+  say('email-service <b>comes back</b> and subscribes again. The channel has <b>nothing stored</b> to give it.');
+  Net.set('em', { state: '', badge: 'missed order 502', badgeCls: 'bad' });
+  line('em', 'subscribed again … nothing arrives', 'bad');
+  setC('c1', 0, '', 'hot');
+  await Net.beat(ctx);
+  say('<b>Aman never got his confirmation email.</b> Pub/Sub delivers only to whoever is listening right now. Today we fix exactly this.', 'err');
+}
+
+// ================= Step 2: the same failure with a stream =================
+function setup2() {
+  system({ c1: 'Emails sent for order 502', entries: [['…283-0', 'order 501 · Pizza']],
+    groups: [['email', 'given up to 501'], ['delivery', 'given up to 501']],
+    subs: [['em', 'email-service', ':9021 · group email', 'handled order 501'], ['dl', 'delivery-service', ':9022 · group delivery', 'handled order 501']] });
+  setPanel(
+    C('cm', '// class 65: order-service WRITES the order into a stream') + '\n'
+    + 'redisTemplate.opsForStream().add("orders", fields);   ' + C('cm', '// XADD orders * id 502 item Burger ...') + '\n\n'
+    + C('cm', '// The entry stays in Redis. Each consumer group remembers how far it has read.'),
+    table(['', 'Pub/Sub (class 63)', 'Stream (today)'], [
+      ['The message is', 'handed over and forgotten', 'stored as an entry with an id'],
+      ['A service that was down', 'missed it for good', 'gets it when it comes back'],
+      ['Two copies of one service', 'both get every message', 'each entry goes to one copy'],
+      ['"Did it get handled?"', 'nobody knows', 'XACK, and a pending list'],
+      ['Cost', 'nothing stored', 'uses memory until trimmed']]),
+    null, 'Pub/Sub vs Stream');
+}
+async function run2(ctx) {
+  say('Today, with a <b>Stream</b>. The same thing happens: <b>email-service goes down</b>.');
+  await Net.beat(ctx);
+  Net.set('em', { state: 'down', badge: 'down', badgeCls: 'bad' });
+  line('em', 'not running');
+  await Net.beat(ctx, 1500);
+  say('Aman orders a burger. order-service <b>adds an entry</b> to the stream: <b>XADD</b>.');
+  await send('pm', 'os', 'POST /orders');
+  await send('os', 'st', 'XADD orders', 'teal');
+  Net.check(ctx);
+  addE('…365-0', 'order 502 · Burger');
+  Net.flash('st', 'ok');
+  say('The order is now <b>stored in Redis</b>, whoever is or is not listening.');
+  await Net.beat(ctx);
+  await send('st', 'dl', 'order 502', 'ok');
+  line('dl', 'rider assigned for order 502', 'ok');
+  grp('delivery', 'given up to 502');
+  say('delivery-service reads it. The <b>email group</b> has still only been given up to 501.');
+  await Net.beat(ctx);
+  say('email-service <b>comes back</b> and asks its group: "anything I have not been given yet?"');
+  Net.set('em', { state: '', badge: '' });
+  line('em', 'started, reading group email…');
+  await send('em', 'st', 'XREADGROUP … >', 'teal');
+  Net.check(ctx);
+  await send('st', 'em', 'order 502', 'ok');
+  line('em', 'emailing Aman: order 502 confirmed', 'ok');
+  grp('email', 'given up to 502');
+  Net.set('em', { badge: 'caught up', badgeCls: 'ok' });
+  setC('c1', 1, '', 'good');
+  await Net.beat(ctx);
+  say('<b>Aman gets his email.</b> The stream kept the order, and the group remembered where email-service had stopped.', 'win');
+}
+
+// ================= Step 3: inside the producer =================
+function setup3() {
+  ENT = []; GRP = [];
+  Net.group({ x: 150, y: 60, w: 600, h: 400, label: 'order-service  :9020' });
+  Net.node('pm', { x: 75, y: 250, label: 'Postman', sub: 'POST /orders', kind: 'client', w: 130 });
+  Net.node('ctl', { x: 270, y: 170, label: 'OrderController', sub: 'placeOrder(order)', kind: 'proxy', w: 200 });
+  Net.node('pub', { x: 270, y: 350, label: 'OrderPublisher', sub: 'publish(order)', kind: 'proxy', w: 200, body: '<div class="ln">Order → fields</div>' });
+  Net.node('tpl', { x: 585, y: 260, label: 'StringRedisTemplate', sub: 'made by Spring Boot · no config', kind: 'proxy', w: 280 });
+  Net.node('st', { x: 880, y: 260, label: 'Redis', sub: 'stream: orders', kind: 'lb', w: 200, body: stHTML() });
+  Net.link('pm', 'ctl'); Net.link('ctl', 'pub'); Net.link('pub', 'tpl'); Net.link('tpl', 'st');
+  setPanel(
+    C('cm', '// OrderPublisher. There is NO RedisConfig in order-service.') + '\n'
+    + C('an', '@Autowired') + '\nprivate StringRedisTemplate redisTemplate;\n\n'
+    + 'public String publish(Order order) {\n'
+    + '    Map&lt;String, String&gt; fields = new HashMap&lt;&gt;();\n'
+    + '    fields.put("id", String.valueOf(order.getId()));\n'
+    + '    fields.put("item", order.getItem());\n'
+    + '    fields.put("customer", order.getCustomer());\n'
+    + '    fields.put("restaurant", order.getRestaurant());\n'
+    + '    fields.put("address", order.getAddress());\n\n'
+    + '    RecordId entryId = ' + C('an', 'redisTemplate.opsForStream().add("orders", fields)') + ';   ' + C('cm', '// XADD') + '\n'
+    + '    return entryId.getValue();\n}',
+    '<div class="kc"><div class="kh"><code>orders</code><span class="ty">stream</span></div><div class="kb"><pre>1791792656283-0\n  id          501\n  item        Pizza\n  customer    Zoya\n  restaurant  Pizza Hut\n  address     MG Road, Pune</pre><div class="cap">a real key: it shows up in Redis Insight, with its fields</div></div></div>',
+    null, 'What Redis stores');
+}
+async function run3(ctx) {
+  say('Inside <b>order-service</b>. Compared with class 63 it has <b>no RedisConfig</b>.');
+  await Net.beat(ctx);
+  await send('pm', 'ctl', 'POST /orders');
+  Net.set('ctl', { body: '<div class="pay new">Order { id=501 … }</div>' });
+  say('The controller receives the <b>Order object</b> and hands it to OrderPublisher.');
+  await send('ctl', 'pub', 'Order object');
+  await Net.beat(ctx, 1500);
+  say('A stream entry is made of <b>fields</b>. The publisher puts the Order\'s values into a <b>Map</b>.');
+  Net.set('pub', { body: '<div class="pay new">id=501  item=Pizza\ncustomer=Zoya  …</div>' });
+  Net.flash('pub', 'ok');
+  await Net.beat(ctx);
+  say('It calls <b>opsForStream().add("orders", fields)</b>. Plain text needs no serializer, so Spring\'s ready-made StringRedisTemplate is enough.');
+  await send('pub', 'tpl', 'add("orders", fields)', 'teal');
+  await send('tpl', 'st', 'XADD orders * id 501 …', 'teal');
+  Net.check(ctx);
+  addE('…283-0', 'order 501 · Pizza');
+  Net.flash('st', 'ok');
+  say('Redis <b>stores the entry</b> and replies with its <b>id</b> (the time it was added, plus a sequence number).');
+  await send('st', 'tpl', '"1791792656283-0"', 'ok', 700);
+  await send('tpl', 'pub', 'entry id', 'ok', 600);
+  await send('pub', 'ctl', 'entry id', 'ok', 600);
+  await send('ctl', 'pm', 'Stored as entry …283-0', 'ok', 700);
+  await Net.beat(ctx);
+  say('<b>The producer side:</b> turn the Order into fields, call add. It does not care who reads the stream, or when.', 'win');
+}
+
+// ================= Step 4: inside a consumer =================
+function setup4() {
+  ENT = [{ id: '…283-0', t: 'order 501 · Pizza', s: '' }]; GRP = [];
+  Net.group({ x: 270, y: 60, w: 715, h: 400, label: 'email-service  :9021' });
+  Net.node('st', { x: 125, y: 250, label: 'Redis', sub: 'stream: orders', kind: 'lb', w: 230, body: stHTML() });
+  Net.node('con', { x: 440, y: 250, label: 'Stream listener container', sub: 'from RedisConfig', kind: 'proxy', w: 270, body: '<div class="ln">not started</div>' });
+  Net.node('lis', { x: 795, y: 170, label: 'EmailListener', sub: 'onMessage(record)', kind: 'proxy', w: 310, body: '<div class="ln">waiting to be called</div>' });
+  Net.node('out', { x: 795, y: 375, label: 'Console', kind: 'client', w: 310, body: '<div class="ln">—</div>' });
+  Net.link('st', 'con'); Net.link('con', 'lis'); Net.link('lis', 'out');
+  setPanel(
+    C('cm', '// RedisConfig') + '\n'
+    + 'redisTemplate.opsForStream().' + C('an', 'createGroup("orders", ReadOffset.from("0"), "email")') + ';\n'
+    + '                                          ' + C('cm', '// XGROUP CREATE orders email 0 MKSTREAM') + '\n'
+    + 'container = StreamMessageListenerContainer.create(connectionFactory);\n'
+    + 'container.' + C('an', 'receive') + '(Consumer.from("email", consumerName),\n'
+    + '        StreamOffset.create("orders", ReadOffset.lastConsumed()),   ' + C('cm', '// the > in XREADGROUP') + '\n'
+    + '        emailListener);\n'
+    + 'container.start();\n\n'
+    + C('cm', '// EmailListener implements StreamListener') + '\n'
+    + 'public void onMessage(MapRecord&lt;String, String, String&gt; record) {\n'
+    + '    Map&lt;String, String&gt; fields = record.getValue();       ' + C('cm', '// 1. fields -> Order') + '\n'
+    + '    System.out.println("EMAIL SERVICE -> sending ...");      ' + C('cm', '// 2. do the work') + '\n'
+    + '    redisTemplate.opsForStream().' + C('an', 'acknowledge("orders", "email", record.getId())') + ';   ' + C('cm', '// 3. XACK') + '\n}',
+    consoleCard([['EMAIL SERVICE    -> sending confirmation to Zoya: your Pizza (order 501) is confirmed', 'ok'], ['redis-cli:  XPENDING orders email  →  0']]), null, 'Console of email-service');
+}
+async function run4(ctx) {
+  say('Inside <b>email-service</b>. First, what its RedisConfig does when the app <b>starts</b>.');
+  await Net.beat(ctx);
+  say('<b>1.</b> It makes sure the <b>consumer group "email"</b> exists. A group is a team that shares the stream and remembers how far it has read.');
+  await send('con', 'st', 'XGROUP CREATE … email', 'teal');
+  Net.check(ctx);
+  grp('email', 'nothing given yet');
+  await Net.beat(ctx);
+  say('<b>2.</b> It starts a <b>container</b> that keeps asking Redis, as consumer <b>email-1</b> of that group: "any entry I have not been given yet?"');
+  Net.set('con', { body: '<div class="ln ok">consumer email-1 · group email</div>' });
+  await send('con', 'st', 'XREADGROUP … >', 'teal');
+  Net.check(ctx);
+  say('Order 501 is waiting in the stream. Redis hands it to this group and marks it <b>pending</b>: given out, not confirmed yet.');
+  ENT[0].s = 'pend';
+  grp('email', 'given up to 501 · pending 1');
+  await send('st', 'con', 'entry …283-0', 'ok');
+  await Net.beat(ctx);
+  say('The container calls <b>onMessage(record)</b> on EmailListener.');
+  await send('con', 'lis', 'onMessage(record)');
+  Net.set('lis', { body: '<div class="pay new">1. fields → Order { id=501 … }</div>' });
+  await Net.beat(ctx);
+  say('It does its work.');
+  Net.set('lis', { body: '<div class="pay">1. fields → Order { id=501 … }\n2. send the email</div>' });
+  await send('lis', 'out', 'println', 'ok', 700);
+  Net.set('out', { body: '<div class="ln ok" style="white-space:normal">EMAIL SERVICE -> sending confirmation to Zoya: your Pizza (order 501) is confirmed</div>' });
+  await Net.beat(ctx);
+  say('Last line of onMessage: <b>acknowledge</b>. It tells Redis "this one is done" (<b>XACK</b>).');
+  Net.set('lis', { body: '<div class="pay new">1. fields → Order { id=501 … }\n2. send the email\n3. acknowledge  (XACK)</div>' });
+  Net.link('lis', 'st');
+  await send('lis', 'st', 'XACK orders email …283-0', 'ok');
+  Net.check(ctx);
+  ENT[0].s = '';
+  grp('email', 'given up to 501 · pending 0');
+  Net.flash('st', 'ok');
+  await Net.beat(ctx);
+  say('<b>The consumer side:</b> create the group, start a container, and in onMessage: read the fields, do the work, acknowledge. The entry itself stays in the stream.', 'win');
+}
+
+// ================= Step 5: two copies of one service =================
+function setup5() {
+  system({ c1: 'Emails per order', groups: [['email', '2 consumers: email-1, email-2'], ['delivery', '1 consumer: delivery-1']],
+    subs: [['e1', 'email-service (copy 1)', ':9021 · email-1 of group email'], ['e2', 'email-service (copy 2)', ':9023 · email-2 of group email'], ['dl', 'delivery-service', ':9022 · delivery-1 of group delivery']] });
+  setPanel(
+    C('cm', '# application.properties of email-service') + '\n'
+    + 'server.port=9021\n' + C('an', 'app.consumer-name=email-1') + '\n\n'
+    + C('cm', '# start a second copy with another port and another name:') + '\n'
+    + './mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=9023 --app.consumer-name=email-2"\n\n'
+    + C('cm', '// RedisConfig: same group, a different consumer name') + '\n'
+    + 'Consumer.from("email", consumerName)',
+    consoleCard([['copy email-1 handled: 503, 504, 507, 508', 'ok'], ['copy email-2 handled: 505, 506', 'ok'], ['delivery-service (one copy) handled all six'], ['Not an even split: Redis gives each entry to whichever copy asks first.']]),
+    'How to run two copies', 'What happened in a real run of 6 orders');
+}
+async function run5(ctx) {
+  say('Orders are pouring in, so we run <b>two copies of email-service</b>. Both are in the <b>same group</b> (email), with different consumer names.');
+  await Net.beat(ctx);
+  const plan = [['503', 'e1'], ['504', 'e2'], ['505', 'e1'], ['506', 'e1']];
+  const got = { e1: [], e2: [] };
+  for (const p of plan) {
+    say('Order ' + p[0] + ' is added to the stream.');
+    await send('pm', 'os', 'POST /orders', '', 600);
+    await send('os', 'st', 'XADD', 'teal', 600);
+    Net.check(ctx);
+    addE('…' + p[0], 'order ' + p[0]);
+    ENT = ENT.slice(-3); paintS();
+    await Promise.all([send('st', p[1], 'order ' + p[0], 'ok', 700), send('st', 'dl', 'order ' + p[0], 'ok', 700)]);
+    Net.check(ctx);
+    got[p[1]].push(p[0]);
+    line(p[1], 'emailed: ' + got[p[1]].join(', '), 'ok');
+    line('dl', 'riders assigned: ' + got.e1.concat(got.e2).sort().join(', '), 'ok');
+  }
+  setC('c1', 1, 'never 2', 'good');
+  await Net.beat(ctx);
+  say('Inside the <b>email group</b>, every order went to <b>only one copy</b>: no customer got two emails. The split is not even; Redis gives an entry to whichever copy asks first.');
+  await Net.beat(ctx);
+  say('The <b>delivery group</b> is separate, so delivery-service still got <b>every</b> order. Groups share between copies of one service; different services each get everything.', 'win');
+}
+
+// ================= Step 6: crash before the acknowledge =================
+function setup6() {
+  system({ c1: 'Pending in group email', entries: [['…507', 'order 507 · Pasta']], groups: [['email', 'given up to 506 · pending 0']],
+    subs: [['em', 'email-service', ':9021 · email-1 of group email'], ['dl', 'delivery-service', ':9022 · group delivery', 'handled order 507']] });
+  setC('c1', 0);
+  setPanel(
+    C('cm', '// our listener: the acknowledge is the LAST line') + '\n'
+    + 'public void onMessage(MapRecord&lt;String, String, String&gt; record) {\n'
+    + '    ... fields -> Order ...\n'
+    + '    System.out.println("EMAIL SERVICE -> sending ...");\n'
+    + '    ' + C('cm', '// a crash here = given out, never confirmed') + '\n'
+    + '    redisTemplate.opsForStream().' + C('an', 'acknowledge("orders", "email", record.getId())') + ';\n}\n\n'
+    + C('cm', '// our container asks only for NEW entries (ReadOffset.lastConsumed() = ">"),') + '\n'
+    + C('cm', '// so it does not pick this one up again by itself.'),
+    consoleCard([['redis-cli:  XPENDING orders email', ''], ['1) (integer) 1        ← one entry given out, never confirmed', 'bad'], ['Fix, by hand:  XCLAIM orders email email-1 0 <id>   (class 62)'], ['Not in our project code.', 'bad']]),
+    null, 'What Redis shows');
+}
+async function run6(ctx) {
+  say('One more case. email-service is <b>given</b> order 507, and <b>crashes before it reaches the acknowledge line</b>.');
+  await Net.beat(ctx);
+  await send('em', 'st', 'XREADGROUP … >', 'teal');
+  await send('st', 'em', 'order 507', 'ok');
+  Net.check(ctx);
+  ENT[0].s = 'pend'; grp('email', 'given up to 507 · pending 1');
+  line('em', 'working on order 507…');
+  setC('c1', 1, '', 'hot');
+  await Net.beat(ctx);
+  say('💥 It crashes. No XACK was sent.', 'err');
+  Net.set('em', { state: 'down', badge: 'crashed', badgeCls: 'bad' });
+  line('em', 'not running');
+  await Net.beat(ctx);
+  say('Redis has <b>not lost</b> it: the entry is still in the stream, and the group lists it as <b>pending</b> for email-1.');
+  grp('email', 'pending 1: order 507, held by email-1', true);
+  Net.flash('st', 'bad');
+  await Net.beat(ctx);
+  say('email-service restarts and asks for entries it has <b>not been given yet</b>. Order 507 <b>was</b> given, so Redis does not send it again.');
+  Net.set('em', { state: '', badge: '' });
+  line('em', 'started, reading group email…');
+  await send('em', 'st', 'XREADGROUP … >', 'teal');
+  await send('st', 'em', '(nothing new)', 'muted', 700);
+  Net.check(ctx);
+  line('em', 'nothing new · 507 still pending', 'bad');
+  Net.set('em', { badge: '507 not finished', badgeCls: 'bad' });
+  await Net.beat(ctx);
+  say('<b>Our project stops here.</b> The order is safe in Redis but unfinished. Real systems check the pending list on startup (XPENDING) and take those entries back (XCLAIM), as we did by hand in class 62.', 'err');
+}
+
+// ================= Step 7: cheat sheet =================
+const SHEET = [
+  ['Dependency, Redis address', 'every service', 'spring-boot-starter-data-redis, spring.data.redis.host / port', '–'],
+  ['OrderPublisher', 'order-service', 'opsForStream().add("orders", fields)', 'XADD orders * id 501 …'],
+  ['RedisConfig', 'order-service', 'none needed (text fields)', '–'],
+  ['Create the group', 'each consumer, RedisConfig', 'createGroup("orders", ReadOffset.from("0"), "email")', 'XGROUP CREATE orders email 0 MKSTREAM'],
+  ['Container', 'each consumer, RedisConfig', 'StreamMessageListenerContainer + receive(consumer, offset, listener)', 'XREADGROUP GROUP email email-1 STREAMS orders >'],
+  ['Listener', 'each consumer', 'implements StreamListener; onMessage(record)', 'the entry a reader gets'],
+  ['Acknowledge', 'each consumer, in onMessage', 'opsForStream().acknowledge("orders", "email", id)', 'XACK orders email <id>']
+];
+function sheetHTML(shown, rule) {
+  return '<table class="score"><tr><th>Piece</th><th>Where</th><th>What it is</th><th>Same as in redis-cli</th></tr>'
+    + SHEET.map((r, i) => `<tr class="${i < shown ? '' : 'hide'}"><td>${r[0]}</td><td>${r[1]}</td><td><code>${esc(r[2])}</code></td><td>${esc(r[3])}</td></tr>`).join('')
+    + '</table>'
+    + (rule ? '<div class="rule"><b>Pub/Sub:</b> a live broadcast. Fast and light, but a service that is down misses the message.<br><b>Stream:</b> a written log. A service that was down catches up, copies of a service share the work, and XACK confirms it.<br><b>Ask:</b> is it OK to lose this message? Yes → Pub/Sub. No → Stream.</div>' : '');
+}
+function setup7() {
+  Net.node('board', { x: 500, y: 250, label: 'Who has what', kind: 'proxy', w: 960, body: sheetHTML(0, false) });
+  $('#final').classList.add('hidden');
+}
+async function run7(ctx) {
+  say('Every piece of today, and the redis-cli command it matches.');
+  for (let i = 1; i <= SHEET.length; i++) {
+    await wait(ctx, 700);
+    Net.set('board', { body: sheetHTML(i, false) });
+  }
+  await Net.beat(ctx, 1500);
+  Net.set('board', { body: sheetHTML(SHEET.length, true) });
+  say('<b>Producer:</b> add. <b>Consumer:</b> create the group, read, do the work, acknowledge.', 'win');
+}
+
+// ---------- the question before each step, and the answer after it ----------
+const QA = [
+  { q: 'In class 63, email-service was down while order 502 was placed. Why could it never get that order afterwards?',
+    a: ['Pub/Sub hands a message to whoever is listening <b>at that instant</b>.',
+        'Redis <b>stores nothing</b> for a channel, so there is nothing to give a service that comes back later.',
+        'The order itself succeeded, but the email was lost for good.',
+        'To fix it, the message has to be <b>kept somewhere</b>.'] },
+  { q: 'What must Redis remember so that a service which was down can catch up when it returns?',
+    a: ['<b>The messages:</b> XADD stores each order as an entry with an id.',
+        '<b>How far each service has read:</b> a consumer group keeps that position.',
+        'When email-service returns, it asks its group for entries it has not been given yet, and gets order 502.',
+        'Each group (email, delivery) reads the whole stream on its own.'] },
+  { q: 'In class 63 the publisher needed a RedisConfig with a JSON serializer. Why does order-service need no config today?',
+    a: ['A stream entry is a set of <b>text fields</b> (id, item, customer…), not one blob.',
+        'Spring Boot already provides <b>StringRedisTemplate</b>, which handles text.',
+        'The publisher puts the Order\'s values in a Map and calls <b>opsForStream().add("orders", fields)</b> = XADD.',
+        'Bonus: the stream is a <b>real key</b>, so you can open it in Redis Insight and see every field.'] },
+  { q: 'After email-service handles an order, how does Redis know the job is finished?',
+    a: ['When an entry is given to a consumer, Redis marks it <b>pending</b>.',
+        'The last line of onMessage calls <b>acknowledge</b> (XACK): "this one is done".',
+        'The entry then leaves the group\'s pending list. It <b>stays in the stream</b>; other groups may still need it.',
+        'Setup on startup: <b>createGroup</b> (XGROUP CREATE … MKSTREAM), then a container that reads with <b>></b> (XREADGROUP).'] },
+  { q: 'We start a second copy of email-service to keep up. How do we stop every customer from getting two emails?',
+    a: ['Both copies join the <b>same group</b> (email), each with its own consumer name (email-1, email-2).',
+        'Redis gives each entry to <b>only one</b> consumer of a group.',
+        'The split is not even: whichever copy asks first gets the entry.',
+        'A <b>different group</b> (delivery) still receives every entry. Same service → share; different services → each get all.'] },
+  { q: 'email-service is given an order and crashes before the acknowledge line. Is the order lost? Will it be retried?',
+    a: ['<b>Not lost:</b> the entry is still in the stream, and listed as <b>pending</b> for that consumer.',
+        '<b>Not retried automatically by our code:</b> the container asks only for new entries (>), and this one was already given out.',
+        'Real systems read the pending list on startup (<b>XPENDING</b>) and take entries back (<b>XCLAIM</b>).',
+        'This is why acknowledge goes <b>after</b> the work, never before.'] },
+  { q: 'Which pieces does the producer need, and which does a consumer need?',
+    a: ['<b>Producer:</b> opsForStream().add. No config.',
+        '<b>Consumer:</b> create the group, a listener container, onMessage, and acknowledge.',
+        'Every Java call maps to one redis-cli command from class 62.',
+        'Pub/Sub when losing a message is fine; a Stream when it is not.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  $('#ansList').innerHTML = QA[i].a.map(t => `<li>${t}</li>`).join('');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const ASK = '<span class="ask"><b>What the app needs:</b> ';
+Net.scenarios([
+  { label: '1 Pub/Sub lost it', story: '<b>Use case:</b> Class 63 again: email-service is down while Aman orders a burger.' + ASK + 'Aman should still get his confirmation email.</span>', setup: setup1, run: run1 },
+  { label: '2 With a stream', story: '<b>Use case:</b> The same failure, but the order is written into a Redis stream.' + ASK + 'A service that was down must catch up when it returns.</span>', setup: setup2, run: run2 },
+  { label: '3 The producer', story: '<b>Use case:</b> We open the order-service project.' + ASK + 'Store each order in the stream "orders".</span>', setup: setup3, run: run3 },
+  { label: '4 A consumer', story: '<b>Use case:</b> We open the email-service project.' + ASK + 'Read every order once, and tell Redis when it is done.</span>', setup: setup4, run: run4 },
+  { label: '5 Two copies', story: '<b>Use case:</b> One email-service cannot keep up, so we run two copies of it.' + ASK + 'Every order gets exactly one email.</span>', setup: setup5, run: run5 },
+  { label: '6 Crash before XACK', story: '<b>Use case:</b> email-service is given an order and crashes before it finishes.' + ASK + 'Know what happens to that order.</span>', setup: setup6, run: run6 },
+  { label: '7 Cheat sheet', story: '<b>Use case:</b> Everything side by side.' + ASK + 'Know which piece goes in which project.</span>', setup: setup7, run: run7 }
+], 'Step 1 is a recap of class 63 (Pub/Sub). The stream starts in step 2.');
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>
