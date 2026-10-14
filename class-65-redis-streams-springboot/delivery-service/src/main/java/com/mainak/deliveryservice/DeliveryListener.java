@@ -27,8 +27,7 @@ public class DeliveryListener implements StreamListener<String, MapRecord<String
         order.setAddress(fields.get("address"));
 
         // 2. do the work
-        System.out.println("DELIVERY SERVICE -> rider assigned for order " + order.getId()
-                + ": pick up from " + order.getRestaurant() + ", deliver to " + order.getAddress());
+        System.out.println("DELIVERY SERVICE -> rider assigned for order " + order.getId() + ": pick up from " + order.getRestaurant() + ", deliver to " + order.getAddress());
 
         // 3. tell Redis "done", so the entry leaves this group's pending list   (XACK orders delivery <id>)
         redisTemplate.opsForStream().acknowledge("orders", "delivery", record.getId());

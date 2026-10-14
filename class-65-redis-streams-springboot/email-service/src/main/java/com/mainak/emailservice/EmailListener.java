@@ -27,8 +27,7 @@ public class EmailListener implements StreamListener<String, MapRecord<String, S
         order.setAddress(fields.get("address"));
 
         // 2. do the work
-        System.out.println("EMAIL SERVICE    -> sending confirmation to " + order.getCustomer()
-                + ": your " + order.getItem() + " (order " + order.getId() + ") is confirmed");
+        System.out.println("EMAIL SERVICE    -> sending confirmation to " + order.getCustomer() + ": your " + order.getItem() + " (order " + order.getId() + ") is confirmed");
 
         // 3. tell Redis "done", so the entry leaves this group's pending list   (XACK orders email <id>)
         redisTemplate.opsForStream().acknowledge("orders", "email", record.getId());
