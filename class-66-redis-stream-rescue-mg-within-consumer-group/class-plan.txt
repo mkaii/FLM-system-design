@@ -2,13 +2,13 @@ Class 66: Redis Streams - rescuing a stuck entry inside a consumer group
 
 Builds on class 65 (same order-service and email-service). New: PendingRescuer in email-service.
 Postman: order-streams.postman_collection.json   (requests 4a, 4b, 4c are the crash tests)
-Animations: animations/rescue.html, atomic.html, lock.html  (three pages, linked to each other; shared code in topics.js)
+Animation: animations/rescue.html  (crash before send, crash after send, slow not dead)
 Notes: rescue-payload-idempotency-discussion.pdf
 
 1. Topics
    - Rescue: a copy took an entry and never sent XACK -> another copy claims it (XPENDING, XCLAIM)
-   - Atomic updates: Redis runs one command at a time, but GET then SET is two commands -> use INCR
-   - Distributed lock: one Redis key per seat (SET NX PX), delete only your own lock, database makes the final check
+   - Idempotency: a rescue can repeat work that was already done -> make the work safe to repeat
+   - Moved to class 67: atomic updates (single-threaded Redis) and distributed locks
 
 2. Crash before XACK, and the rescue  (email-service/PendingRescuer.java)
    Timing (the only two numbers; there is no TTL anywhere in this code):
