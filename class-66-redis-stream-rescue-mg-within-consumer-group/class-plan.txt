@@ -1,0 +1,45 @@
+Class 66: Redis Streams - rescuing a stuck entry inside a consumer group
+
+Builds on class 65 (same order-service and email-service). New: PendingRescuer in email-service.
+Postman: order-streams.postman_collection.json   (requests 4a, 4b, 4c are the crash tests)
+Animations: animations/rescue.html, atomic.html, lock.html  (three pages, linked to each other; shared code in topics.js)
+Notes: rescue-payload-idempotency-discussion.pdf
+
+1. Topics
+   - Rescue: a copy took an entry and never sent XACK -> another copy claims it (XPENDING, XCLAIM)
+   - Atomic updates: Redis runs one command at a time, but GET then SET is two commands -> use INCR
+   - Distributed lock: one Redis key per seat (SET NX PX), delete only your own lock, database makes the final check
+
+2. Crash before XACK, and the rescue  (email-service/PendingRescuer.java)
+   Timing (the only two numbers; there is no TTL anywhere in this code):
+      STUCK_AFTER = 60 s   PendingRescuer: an entry pending longer than this counts as stuck
+                           used twice: the skip check and the claim's minimum idle time
+      every 30 s           PendingRescuer @Scheduled: how often each copy looks at the pending list
+      -> a stuck entry is rescued 60 to 90 s after it was handed out
+
+   Setup
+      email-1: start in DEBUG mode (the bug icon), port 9021
+      email-2: start with Run (NOT Debug), args --server.port=9023 --app.consumer-name=email-2
+               a Run copy ignores breakpoints, so only email-1 will pause
+      delivery-service and order-service: running as usual
+
+   a. Crash before the email is sent  (the takeover is correct)
+      1. Breakpoint on the "sending confirmation" println in EmailListener
+      2. Postman request 4a. If email-2 prints it instead, change the id and send again
+      3. email-1 stops at the breakpoint: it has the entry, nothing printed, no XACK
+      4. Within 60 s press the red Stop on email-1's Debug tab   (this is the crash)
+      5. redis-cli: XPENDING orders email - + 10   -> the entry, owner email-1
+      6. Wait: 60-90 s after step 2 email-2 prints "rescued entry ... from email-1", then the email line
+      7. XPENDING orders email   -> 0
+
+   b. Crash after the email was sent, before XACK  (the email goes out twice)
+      Same steps, but the breakpoint is on the acknowledge line in EmailListener.
+      email-1 prints the email line, stops before XACK, you kill it, email-2 prints it again.
+      Lesson: no waiting time can prevent this. Make the work safe to repeat.
+
+   c. Alive but slow  (also twice)
+      Same as a, but do NOT kill email-1. Leave it paused more than 90 s, then press Resume.
+      email-2 rescues it while email-1 is paused; on Resume email-1 also prints it.
+      Lesson: Redis cannot tell slow from dead. STUCK_AFTER must be longer than the slowest normal send.
+
+   Restart both email copies after adding PendingRescuer, or they run the old code.
