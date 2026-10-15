@@ -1,0 +1,16 @@
+Class 67: Redis - atomic updates and distributed locks
+
+Animations: animations/atomic.html, lock.html  (two pages, linked to each other; shared code in topics.js)
+
+1. Single-threaded Redis and atomic updates   (atomic.html)
+   - Redis runs one command at a time, so each command is atomic
+   - But GET, add in Java, then SET is two commands: another request can slip in between -> 10 + 2 likes = 11
+   - Fix: do the read and the update in one Redis command: INCR
+
+2. Distributed locks   (lock.html)
+   - A Java lock lives in one replica's memory: two replicas can both "hold" it -> seat sold twice
+   - One Redis key per seat:  SET lock:A1 <my-id> NX PX 30000   -> exactly one replica gets OK
+   - The lock can expire while a replica is still working:
+       guard 1: delete the lock only if it still holds my id (a small Lua script: check + delete in one step)
+       guard 2: the database books the seat only if it is still free
+            UPDATE seats SET status='BOOKED' WHERE id='A1' AND status='FREE'   -> 0 rows = already taken
