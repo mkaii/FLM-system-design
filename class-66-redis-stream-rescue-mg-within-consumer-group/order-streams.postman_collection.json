@@ -1,0 +1,207 @@
+{
+  "info": {
+    "name": "Class 66 - Redis Streams: rescue within a consumer group",
+    "description": "One endpoint: **POST http://localhost:9020/orders** (order-service). Each call adds one entry to the Redis stream `orders`.\n\n**Services:** order-service 9020 (producer), email-service 9021 (group email), delivery-service 9022 (group delivery).\n\n**Before the first request:** `DEL orders` in redis-cli, then start email-service and delivery-service, then order-service.\n\nRun the requests in order. Each one says what to do before sending and what to look for in the consoles.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Everyone is up - order 501",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 501,\n  \"item\": \"Pizza\",\n  \"customer\": \"Zoya\",\n  \"restaurant\": \"Pizza Hut\",\n  \"address\": \"MG Road, Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:9020/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "9020",
+          "path": [
+            "orders"
+          ]
+        },
+        "description": "**Before:** order-service, email-service and delivery-service are running.\n\n**Send** once.\n\n**Expect:** the email console and the delivery console both print order 501.\n\n**Why:** two groups (email, delivery), each with its own bookmark, so each gets every order."
+      }
+    },
+    {
+      "name": "2. Email is down - order 502",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 502,\n  \"item\": \"Burger\",\n  \"customer\": \"Aman\",\n  \"restaurant\": \"Burger King\",\n  \"address\": \"FC Road, Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:9020/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "9020",
+          "path": [
+            "orders"
+          ]
+        },
+        "description": "**Before:** stop email-service (every copy). Keep delivery-service running.\n\n**Send** once.\n\n**Expect:** only delivery prints 502. Now start email-service again: it prints 502 as it starts.\n\n**Why:** the order waits in the stream, and the email group's bookmark did not move. With Pub/Sub (class 63) this email was lost."
+      }
+    },
+    {
+      "name": "3. Two email copies share the work - order 503",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 503,\n  \"item\": \"Pasta\",\n  \"customer\": \"Om\",\n  \"restaurant\": \"Olive Garden\",\n  \"address\": \"Baner, Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:9020/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "9020",
+          "path": [
+            "orders"
+          ]
+        },
+        "description": "**Before:** run a second copy of email-service with program arguments `--server.port=9023 --app.consumer-name=email-2`.\n\n**Send** 4 or 5 times, changing the id each time (503, 504, 505...).\n\n**Expect:** each order is printed by only ONE of the two email consoles. Delivery prints all of them.\n\n**Why:** both copies are in group email, so they share one bookmark: each order is handed out once."
+      }
+    },
+    {
+      "name": "4a. Crash BEFORE the email is sent - order 510",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 510,\n  \"item\": \"Biryani\",\n  \"customer\": \"Kabir\",\n  \"restaurant\": \"Paradise\",\n  \"address\": \"Kothrud, Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:9020/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "9020",
+          "path": [
+            "orders"
+          ]
+        },
+        "description": "**Setup:** email-1 started in **Debug** mode (bug icon). email-2 started with **Run** (not Debug), program arguments `--server.port=9023 --app.consumer-name=email-2`. A Run copy ignores breakpoints, so only email-1 pauses. Restart both copies after adding PendingRescuer.\n\n**Breakpoint:** `EmailListener`, on the `System.out.println(\"EMAIL SERVICE -> sending confirmation...\")` line.\n\n**Send** until email-1 pauses at the breakpoint (if email-2 prints it instead, change the id and send again).\n\n**Then:** within 60 s, press the red **Stop** on email-1's Debug tab. That is the crash.\n\n**Expect:** 60-90 s after sending, email-2 prints `rescued entry ... from email-1`, then the email line. Sent once.\n\n**Why:** PendingRescuer runs every 30 s in each copy and claims entries stuck over 60 s.\n\n**Check:** redis-cli `XPENDING orders email - + 10` shows the stuck entry and its owner. After the rescue, `XPENDING orders email` is 0."
+      }
+    },
+    {
+      "name": "4b. Crash AFTER the email is sent, before XACK - order 520",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 520,\n  \"item\": \"Dosa\",\n  \"customer\": \"Meera\",\n  \"restaurant\": \"Paradise\",\n  \"address\": \"Kothrud, Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:9020/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "9020",
+          "path": [
+            "orders"
+          ]
+        },
+        "description": "**Setup:** email-1 started in **Debug** mode (bug icon). email-2 started with **Run** (not Debug), program arguments `--server.port=9023 --app.consumer-name=email-2`. A Run copy ignores breakpoints, so only email-1 pauses. Restart both copies after adding PendingRescuer.\n\n**Breakpoint:** `EmailListener`, on the `acknowledge(...)` line.\n\n**Send** until email-1 pauses. It has already printed the email line.\n\n**Then:** within 60 s, press **Stop** on email-1.\n\n**Expect:** 60-90 s later email-2 rescues it and prints the email line AGAIN. Sent twice.\n\n**Why:** Redis only knows 'no XACK'. It cannot tell that the email went out. Streams are at-least-once: make the work safe to repeat.\n\n**Check:** redis-cli `XPENDING orders email - + 10` shows the stuck entry and its owner. After the rescue, `XPENDING orders email` is 0."
+      }
+    },
+    {
+      "name": "4c. Alive but SLOW - order 530",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 530,\n  \"item\": \"Thali\",\n  \"customer\": \"Ravi\",\n  \"restaurant\": \"Paradise\",\n  \"address\": \"Kothrud, Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:9020/orders",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "9020",
+          "path": [
+            "orders"
+          ]
+        },
+        "description": "**Setup:** email-1 started in **Debug** mode (bug icon). email-2 started with **Run** (not Debug), program arguments `--server.port=9023 --app.consumer-name=email-2`. A Run copy ignores breakpoints, so only email-1 pauses. Restart both copies after adding PendingRescuer.\n\n**Breakpoint:** `EmailListener`, on the `System.out.println(...)` line.\n\n**Send** until email-1 pauses.\n\n**Then:** do NOT stop email-1. Wait more than 90 s, then press **Resume** on email-1.\n\n**Expect:** while email-1 is paused, email-2 rescues it and prints the email. After Resume, email-1 prints it too. Sent twice.\n\n**Why:** Redis cannot tell slow from dead. The 60 s limit (STUCK_AFTER) must be longer than the slowest normal send.\n\n**Check:** redis-cli `XPENDING orders email - + 10` shows the stuck entry and its owner. After the rescue, `XPENDING orders email` is 0."
+      }
+    }
+  ]
+}
