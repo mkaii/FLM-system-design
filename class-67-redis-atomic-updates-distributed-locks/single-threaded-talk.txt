@@ -1,0 +1,51 @@
+Class 67: single-threaded Redis and atomic updates (talk-track)
+Animation: animations/atomic.html   (step 1 = add in Java, step 2 = INCR)
+
+WHAT TO SAY, IN ORDER
+   1. Redis runs ONE command at a time (one thread). Two commands never run at the same instant.
+         show: one cashier, one customer at a time
+   2. So each SINGLE command is safe: it cannot be interrupted halfway.
+   3. But the app often needs TWO commands: read the value, change it in Java, write it back.
+         show: likes counter: GET -> likes + 1 in Java -> SET
+   4. Two requests (two threads or two replicas) can interleave BETWEEN those commands.
+         show: both read 10, both write 11   (atomic.html step 1)
+   5. Redis is not the problem. The GAP between your two commands is.
+         "Redis protects one command, not your pair of commands."
+   6. Fix: let Redis do the read AND the change in ONE command.
+         show: INCR post:42:likes -> 11, then 12   (atomic.html step 2)
+   7. Same idea as the locks:
+         SET ... NX  = "check if free AND take it" in one command
+         EVAL        = "check owner AND delete" in one command
+   8. When no single command fits your logic, use a Lua script: Redis runs the whole script as one command.
+         example: "add 1 only if below 100"
+
+TWO-TERMINAL DEMO   (start each: docker exec -it redis redis-cli)
+   T1 = request A, T2 = request B, T3 = watcher
+    1. T3  SET post:42:likes 10      OK
+    2. T1  GET post:42:likes         "10"   Java adds 1 -> 11
+    3. T2  GET post:42:likes         "10"   Java adds 1 -> 11
+    4. T1  SET post:42:likes 11      OK
+    5. T2  SET post:42:likes 11      OK
+    6. T3  GET post:42:likes         "11"   two likes, only one counted
+    7. T3  SET post:42:likes 10      reset
+    8. T1  INCR post:42:likes        (integer) 11
+    9. T2  INCR post:42:likes        (integer) 12
+
+WORDS TO USE / AVOID
+   say:   "each Redis command is atomic"
+   avoid: "Redis is atomic"   (sounds like everything you do is safe)
+   say:   "read and update in one command"
+   avoid: "use Redis and you have no race conditions"
+   say:   "single-threaded for running commands"
+   avoid: "Redis uses only one thread"   (since Redis 6: extra threads for network I/O and background saving)
+
+IF STUDENTS ASK
+   Isn't one thread slow?
+      Data is in memory, so each command takes microseconds; the network is usually the limit.
+   What is the downside?
+      One slow command (KEYS * on millions of keys) makes everyone wait. Use SCAN.
+   What about MULTI / EXEC?
+      Runs queued commands together, but you can't use a GET result inside it to decide the SET.
+      You would need WATCH and a retry. INCR or Lua is simpler.
+   Other one-step commands?
+      INCRBY, DECR, HINCRBY, SET ... NX, GETDEL
