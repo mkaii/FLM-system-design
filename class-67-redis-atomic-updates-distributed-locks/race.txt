@@ -1,0 +1,8 @@
+Terminal 4: a normal shell (not redis-cli), for step 9
+Start:  (no redis-cli: run the loop in the shell itself)
+The numbers run across all four files: follow them in order.
+
+--- 9. Ten customers, one seat, same moment
+44. for i in $(seq 1 10); do docker exec redis redis-cli --no-raw SET lock:show1:B1 user$i NX EX 60 & done; wait
+        reply: one OK, nine (nil)
+        10 replicas send SET ... NX at once. & = start without waiting, wait = wait for all 10

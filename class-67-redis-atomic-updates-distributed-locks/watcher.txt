@@ -1,0 +1,84 @@
+Terminal 3: watcher (you, looking at the lock)
+Start:  docker exec -it redis redis-cli
+The numbers run across all four files: follow them in order.
+
+--- 1. A lock without NX
+ 1. DEL lock:show1:A1
+        start clean
+
+ 4. GET lock:show1:A1
+        reply: "riya"
+        Aman's lock was silently overwritten
+
+--- 2. NX: only one wins
+ 5. DEL lock:show1:A1
+        reset
+
+ 8. GET lock:show1:A1
+        reply: "aman"
+
+--- 3. The holder crashes, no timer
+ 9. TTL lock:show1:A1
+        reply: (integer) -1
+        TTL only asks: seconds left. -1 = no timer, the lock never goes away (T1 is 'crashed')
+
+--- 4. NX with a timer
+11. DEL lock:show1:A1
+        reset
+
+13. TTL lock:show1:A1
+        reply: (integer) 18
+        seconds left
+
+15. TTL lock:show1:A1   (after waiting 20 s)
+        reply: (integer) -2
+        -2 = the key is gone: the timer freed the seat
+
+--- 5. A slow holder deletes someone else's lock
+17. DEL lock:show1:A1
+        reset
+
+21. GET lock:show1:A1
+        reply: (nil)
+        nobody holds A1, though Riya is still booking
+
+22. SET lock:show1:A1 sara NX EX 60
+        reply: OK
+        Sara gets A1 while Riya is booking it
+
+--- 6. Release only your own lock
+23. DEL lock:show1:A1
+        reset
+
+26. GET lock:show1:A1
+        reply: "riya"
+
+28. GET lock:show1:A1
+        reply: (nil)
+
+--- 7. The final guard: a booked key
+29. DEL lock:show1:A1 booked:show1:A1
+        reset both keys
+
+34. GET booked:show1:A1
+        reply: "aman"
+
+35. TTL booked:show1:A1
+        reply: (integer) -1
+        a sale never expires
+
+--- 8. Several seats in one booking
+36. DEL lock:show1:A1 lock:show1:A2 lock:show1:A3
+        reset
+
+42. KEYS lock:show1:*
+        reply: lock:show1:A2, lock:show1:A3
+        only Riya's locks remain
+
+--- 9. Ten customers, one seat, same moment
+43. DEL lock:show1:B1
+        reset
+
+45. GET lock:show1:B1
+        reply: "user4" (in class)
+        the winner can differ each run

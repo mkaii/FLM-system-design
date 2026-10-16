@@ -1,0 +1,54 @@
+Terminal 1: replica1 (booking for Aman)
+Start:  docker exec -it redis redis-cli
+The numbers run across all four files: follow them in order.
+
+--- 1. A lock without NX
+ 2. SET lock:show1:A1 aman
+        reply: OK
+        Aman 'locks' seat A1. The lock is just a key; the value says who holds it
+
+--- 2. NX: only one wins
+ 6. SET lock:show1:A1 aman NX
+        reply: OK
+        NX = set it only if the KEY does not exist yet (the value is not checked)
+
+--- 4. NX with a timer
+12. SET lock:show1:A1 aman NX EX 20
+        reply: OK
+        EX 20 = delete the key by itself after 20 seconds (PX 20000 = same, in ms)
+
+--- 5. A slow holder deletes someone else's lock
+18. SET lock:show1:A1 aman NX EX 10
+        reply: OK
+        Aman gets the lock, then works slowly
+
+20. DEL lock:show1:A1
+        reply: (integer) 1
+        Aman 'releases his lock'. DEL looks at the name only: it deleted RIYA's lock
+
+--- 6. Release only your own lock
+25. EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 lock:show1:A1 aman
+        reply: (integer) 0
+        the lock says riya, not aman: nothing deleted
+
+--- 7. The final guard: a booked key
+30. SET lock:show1:A1 aman NX EX 10
+        reply: OK
+        Aman holds A1, works slowly
+
+32. SET booked:show1:A1 aman NX
+        reply: OK
+        Aman finishes first: the sale is a second key, with no timer
+
+--- 8. Several seats in one booking
+37. SET lock:show1:A1 aman NX EX 60
+        reply: OK
+        Aman wants A1 + A2, takes them in sorted order
+
+39. SET lock:show1:A2 aman NX EX 60
+        reply: (nil)
+        Aman can't get A2
+
+40. EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 lock:show1:A1 aman
+        reply: (integer) 1
+        all or nothing: Aman gives back A1

@@ -7,7 +7,14 @@ Animations: animations/atomic.html, lock.html  (two pages, linked to each other;
    - But GET, add in Java, then SET is two commands: another request can slip in between -> 10 + 2 likes = 11
    - Fix: do the read and the update in one Redis command: INCR
 
-2. Distributed locks   (lock.html)
+2. Distributed locks in redis-cli   (replica1.txt, replica2.txt, watcher.txt, race.txt; 45 numbered commands)
+   1  no NX: both get OK, the last writer wins          6  safe release: EVAL checks the name, then deletes
+   2  NX: only the first SET creates the key            7  the final guard: SET booked:show1:A1 <me> NX (no timer)
+   3  a crashed holder without a timer: TTL -1          8  several seats: sorted order, all or nothing
+   4  EX 20: the lock frees itself (TTL -2)             9  10 customers at once: exactly one OK
+   5  a slow holder's DEL removes someone else's lock
+
+3. Distributed locks   (lock.html)
    - A Java lock lives in one replica's memory: two replicas can both "hold" it -> seat sold twice
    - One Redis key per seat:  SET lock:A1 <my-id> NX PX 30000   -> exactly one replica gets OK
    - The lock can expire while a replica is still working:

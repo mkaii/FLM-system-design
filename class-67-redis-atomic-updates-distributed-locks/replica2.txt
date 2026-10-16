@@ -1,0 +1,59 @@
+Terminal 2: replica2 (booking for Riya)
+Start:  docker exec -it redis redis-cli
+The numbers run across all four files: follow them in order.
+
+--- 1. A lock without NX
+ 3. SET lock:show1:A1 riya
+        reply: OK
+        Riya also gets OK: both replicas think A1 is theirs
+
+--- 2. NX: only one wins
+ 7. SET lock:show1:A1 riya NX
+        reply: (nil)
+        the key exists, so nothing changes: Riya is refused
+
+--- 3. The holder crashes, no timer
+10. SET lock:show1:A1 riya NX
+        reply: (nil)
+        A1 is blocked forever
+
+--- 4. NX with a timer
+14. SET lock:show1:A1 riya NX
+        reply: (nil)
+        Aman still holds it
+
+16. SET lock:show1:A1 riya NX EX 20
+        reply: OK
+        Riya gets A1
+
+--- 5. A slow holder deletes someone else's lock
+19. SET lock:show1:A1 riya NX EX 60   (after waiting 10 s)
+        reply: OK
+        Aman's lock expired, so Riya gets it
+
+--- 6. Release only your own lock
+24. SET lock:show1:A1 riya NX EX 60
+        reply: OK
+        Riya holds A1
+
+27. EVAL "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end" 1 lock:show1:A1 riya
+        reply: (integer) 1
+        the owner releases it
+
+--- 7. The final guard: a booked key
+31. SET lock:show1:A1 riya NX EX 60   (after waiting 10 s)
+        reply: OK
+        Aman's lock expired: now BOTH are booking A1
+
+33. SET booked:show1:A1 riya NX
+        reply: (nil)
+        the booked key exists: Riya is told 'not available'
+
+--- 8. Several seats in one booking
+38. SET lock:show1:A2 riya NX EX 60
+        reply: OK
+        Riya wants A2 + A3, takes A2 first
+
+41. SET lock:show1:A3 riya NX EX 60
+        reply: OK
+        Riya has both her seats
