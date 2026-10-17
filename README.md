@@ -1,14 +1,19 @@
 # FLM-system-design
 
-Java + OOP course. Each folder below is one class.
+Java, OOP and system design course. Each folder below is one class.
 
-Roughly five blocks:
+The blocks:
 - **Classes 1–9** — Java and OOP basics, ending with a small Splitwise app
 - **Classes 10–13** — SOLID principles
 - **Classes 14–25** — design patterns, one or two per class
 - **Classes 26–37** — three full design projects: parking lot, vending machine, snake game
 - **Classes 38–46** — threads and concurrency
-- **Class 47 onwards** — building APIs with Spring Boot
+- **Classes 47–52** — REST APIs with Spring Boot, ending with a movie ticket booking project
+- **Classes 53–55** — SQL: CRUD, connecting Spring Boot to MySQL, indexes
+- **Classes 56–59** — scaling: load balancing, CAP theorem, NoSQL and MongoDB, SQL vs MongoDB
+- **Classes 60–67** — Redis: data types, caching, Pub/Sub, Streams, atomic updates, distributed locks
+
+Most classes from 54 on have a `class-plan.txt` and an `animations/` folder (open the HTML files in a browser).
 
 ---
 
@@ -257,3 +262,103 @@ Roughly five blocks:
 - First look outside plain Java: building a REST API with Spring Boot
 - `api-demo/` generated from Spring Initializr (see `spring-initializer-website.png`), with one `@RestController` exposing a `/test` endpoint
 - `api.pdf` has the accompanying API/Spring Boot reference material
+- Up to here: a single endpoint, to see the request-response loop
+
+## class-48-user-CRUD
+- First real API: a user service with `GET` and `POST`
+- Controller → service → model, with users kept in memory
+- `api-springboot-get-post.pdf` explains the request flow and annotations
+
+## class-49-usermanagement complete
+- The same user API with full CRUD: list, get by id, search, create, update (`PUT`), delete
+- `postman-requests.png` shows every request working
+
+## class-50-movie ticketing
+- Design for the next project: a movie ticket booking system (`movie-ticket-booking-lld-project.md`)
+- `notes/` is a small HTML site: domain model, seat states, booking flow, API design, concurrency and locking
+
+## class-51-ticketing-code
+- The core concurrency problem of the project: two users picking the same seat at the same moment
+- Three figures walk through the race, plus a PDF on handling it with threads and locks
+
+## class-52-movie-ticketing-code
+- The booking app in Spring Boot, with a Postman collection
+- Flow: lock seats → pay → confirm, with a 5-minute hold on each seat
+- `SeatLockManager` keeps one lock per seat in a `ConcurrentHashMap`, taken in sorted order so two bookings cannot deadlock
+- Seat states (available, locked, booked) use the State pattern; pricing and payment use Strategy
+
+## class-53-SQL-start
+- Databases and tables: `CREATE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE` on a student table
+- `notes.txt` has every query from class, plus a PDF
+
+## class-54-sql-backend-connect
+- Connecting Spring Boot to MySQL with Spring Data JPA: a Todo app with a Postman collection
+- Hibernate creates the tables; `show-sql` prints the SQL it runs
+- Notes PDF on ORM, and screenshots of the dependencies and Workbench
+
+## class-55-indexes
+- Why a lookup on 1,000,000 rows is slow (full table scan), shown with `EXPLAIN` in `index-demo.sql`
+- How an index fixes it: sorted data and a B+ tree, O(log n) instead of O(n)
+- Animations: B+ tree, secondary index, multi-column index, and an index question set
+
+## class-56-horizontal-scaling-load-balancing
+- Scaling out: more servers instead of a bigger one, with a load balancer in front
+- The animations for this block are in class-57
+
+## class-57-servers-Cap-theorem
+- Animations: load balancer, replicas, stateless servers, proxies, API gateway, and a full request flow
+- CAP theorem: when the network splits, choose consistency or availability (`cap.html`, plus a PDF)
+
+## class-58-nosql-mongodb
+- Why NoSQL exists, and its four types (key-value, document, wide-column, graph)
+- MongoDB: documents vs tables, then CRUD and queries
+- Animations: CRUD, finding documents, and how it all fits together
+
+## class-59-sql-vs-mongodb-chat
+- SQL vs MongoDB on one chat app, step by step: messages, reactions, polls, a viral message, deletes, sharding, new features, renames
+- Each step shows the queries side by side and declares a winner; transactions only where they are needed
+- Also adding a server, a server dying, sending money, and deleting old data
+
+## class-60-redis-basics
+- What Redis is: an in-memory key-value store
+- Data types in redis-cli: string, list, set, hash, sorted set, plus `EXPIRE` / `TTL`
+- Animations: life without Redis vs with it, then one page per data type, and a commands reference with real outputs
+
+## class-61-redis-springboot-caching
+- `product-cache/`: a Spring Boot product API with Redis caching, plus a Postman collection
+- Three versions side by side: no cache, manual cache-aside with `RedisTemplate`, and `@Cacheable` / `@CacheEvict`
+- Keys expire after 60 s; the animation shows a cache hit, a miss and stale data
+
+## class-62-redis-pubsub
+- Redis Pub/Sub and Streams in redis-cli, with three terminals
+- Pub/Sub is fire-and-forget: a subscriber that is offline misses the message
+- Streams store the message, so a reader can catch up later
+- Animation with a command / meaning / reply table for every step
+
+## class-63-redis-pubsub-springboot
+- Pub/Sub in Spring Boot: five separate services (order, email, restaurant, delivery, analytics) sending a JSON order
+- The animation starts with direct API calls and their problems, then switches to Pub/Sub
+- Shows how Spring calls `onMessage`, what happens when a subscriber is down, and adding a new service
+
+## class-64-redis-streams-cli
+- Streams with four terminals: one producer, two workers in group `email`, one in group `delivery`
+- `prod.txt`, `email1.txt`, `email2.txt`, `delivery1.txt` record every command from class, in order, with its reply
+- Consumer groups, the bookmark (`last-delivered-id`), the pending list, `XACK`, and rescuing a stuck entry with `XAUTOCLAIM`
+- Animation explains each command word by word
+
+## class-65-redis-streams-springboot
+- The same in Spring Boot: order-service writes to the stream, email-service and delivery-service read it in consumer groups
+- An order placed while email-service is down is still emailed when it comes back
+- Two copies of email-service share the work: each order goes to only one copy
+
+## class-66-redis-stream-rescue-mg-within-consumer-group
+- `PendingRescuer`: every 30 s, a live copy claims entries another copy took but never acknowledged
+- Three crash tests in Postman: crash before sending, crash after sending (sent twice), slow but alive (sent twice)
+- Idempotency: making the work safe to repeat; discussion notes in the PDF
+- Animation: the three crash cases
+
+## class-67-redis-atomic-updates-distributed-locks
+- Single-threaded Redis: each command is atomic, but `GET` then `SET` can still lose an update, so use `INCR` (`single-threaded-talk.txt`)
+- Distributed locks in redis-cli, across `replica1.txt`, `replica2.txt`, `watcher.txt`, `race.txt`: `SET … NX EX`, expiry, releasing only your own lock with `EVAL`, a final booked-key guard, several seats, and 10 clients racing
+- Animations: atomic updates, and the seat lock from a Java lock to a Redis lock
+
