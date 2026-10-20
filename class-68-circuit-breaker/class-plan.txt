@@ -1,0 +1,21 @@
+Class 68: Circuit Breaker (concepts, through the animation)
+
+Animation: animations/circuit-breaker.html  (8 steps)
+Code and Postman: class 69 (../class-69-circuit-breaker-code)
+
+1. Why  (animation step 1)
+   - payment-service hangs, order-service waits on it, threads run out, order-service goes down too: cascading failure
+   - Stop calling a service that is failing; reply with a fallback instead
+
+2. Where it lives
+   - In the CALLER (order-service). payment-service knows nothing about it
+   - Postman calls order-service only; to break payment-service use /chaos (or stop it)
+
+3. The three states  (steps 2-5)
+   CLOSED     call normally, keep the last 5 results
+   OPEN       >= 50% of the last 5 failed (or were slow): don't call, fallback at once, for 10 s
+   HALF-OPEN  after 10 s: 2 trial calls. Fine -> CLOSED. Failing -> OPEN again
+
+4. Retry and circuit breaker  (step 7)
+   - Both live in the caller. Retry = try again for a brief glitch. Breaker = stop when it is really down
+   - Every retry counts in the breaker's window; once OPEN, the call is not retried

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Circuit Breaker</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+<style>
+.nd-badge { right: 8px; }
+.nd-badge.ok { background: #fff; color: #000; }
+/* the breaker's state */
+.st { font: 700 22px/1.2 "JetBrains Mono", ui-monospace, monospace; text-align: center; padding: 6px 0; border: 2px solid; border-radius: 8px; margin: 4px 0 8px; letter-spacing: .04em; transition: all .35s; }
+.st.closed { color: var(--good); border-color: var(--good); }
+.st.open { color: var(--bad); border-color: var(--bad); }
+.st.half { color: var(--amber); border-color: var(--amber); }
+.st.none { color: #6e6e6e; border-color: #444; border-style: dashed; font-size: 15px; }
+.st small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+/* the sliding window: the last 5 calls */
+.wl { font: 11px "JetBrains Mono", monospace; color: var(--muted); margin: 2px 0; }
+.win { display: flex; gap: 5px; justify-content: center; margin: 2px 0 6px; }
+.win span { width: 34px; height: 30px; border: 1px solid #444; border-radius: 6px; display: flex; align-items: center; justify-content: center; font: 700 15px "JetBrains Mono", monospace; color: #555; transition: all .3s; }
+.win .ok { border-color: var(--good); color: var(--good); }
+.win .bad { border-color: var(--bad); color: var(--bad); }
+.win .slow { border-color: var(--amber); color: var(--amber); }
+.rate { font: 12px/1.5 "JetBrains Mono", monospace; text-align: center; color: #ddd; }
+.rate b { color: #fff; }
+.rate .bad { color: var(--bad); font-weight: 700; }
+.rate .muted { color: #777; }
+/* small key/value lines */
+.kv { display: flex; justify-content: space-between; gap: 12px; font: 12px/1.5 "JetBrains Mono", ui-monospace, monospace; padding: 4px 8px; margin: 4px 0; border: 1px solid #444; border-radius: 6px; transition: all .35s; }
+.kv span { color: var(--muted); }
+.kv b { color: #fff; font-weight: 600; }
+.kv.bad { border-color: var(--bad); }
+.kv.bad b { color: var(--bad); }
+.kv.chg { border-color: #fff; background: #262626; }
+/* the Postman box */
+.tw { font: 11.5px/1.45 "JetBrains Mono", ui-monospace, Menlo, monospace; text-align: left; background: #0c0c0c; border: 1px solid #333; border-radius: 7px; padding: 6px 9px; min-height: 40px; }
+.tw div { white-space: pre-wrap; }
+.tw .cmd { color: #fff; font-weight: 600; }
+.tw .ok { color: var(--good); }
+.tw .err { color: var(--bad); }
+.tw .fb { color: var(--amber); }
+.tw .wait { color: #6e6e6e; font-style: italic; }
+/* panel under the stage */
+.two { grid-template-columns: 1fr; }
+table.ct { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 14px; }
+.ct th { text-align: left; font: 11px "JetBrains Mono", monospace; text-transform: lowercase; letter-spacing: .06em; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid #444; font-weight: 400; }
+.ct td { padding: 7px 10px; border-bottom: 1px solid #262626; vertical-align: top; }
+.ct td.c code { font: 600 12.5px "JetBrains Mono", ui-monospace, monospace; color: #fff; background: #0f0f0f; border: 1px solid #444; border-radius: 7px; padding: 3px 8px; display: inline-block; white-space: pre-wrap; }
+.ct td.m { color: #cfcfcf; line-height: 1.5; }
+.ct td.v { font: 600 13px "JetBrains Mono", monospace; color: #fff; white-space: nowrap; }
+.sheet { width: 100%; border-collapse: collapse; font-size: 13.5px; text-align: left; }
+.sheet td, .sheet th { padding: 6px 10px; border-bottom: 1px solid #333; vertical-align: top; }
+.sheet th { font: 11px "JetBrains Mono", monospace; text-transform: lowercase; color: var(--muted); font-weight: 400; }
+.sheet td:first-child { font: 600 12px "JetBrains Mono", monospace; color: #fff; }
+.sheet td:nth-child(2) { font: 600 12px "JetBrains Mono", monospace; color: #fff; white-space: nowrap; }
+.sheet tr { transition: opacity .4s; }
+.sheet tr.hide { opacity: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Circuit Breaker</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="circuit-breaker.html">Animation</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final">
+      <div><div class="qt" id="codeT">What happens in this step</div><div id="code"></div></div>
+    </div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(560, 1.1);
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 800 });
+const stuck = (a, b, label) => Net.send(a, b, { label, cls: 'bad', dur: 900, stopAt: 0.6 });
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+
+// ---------- what each box holds ----------
+let B;   // breaker: state, window of last 5 calls, countdown
+let P;   // payment-service: mode, calls received
+let LOG; // Postman replies
+const STATE = { CLOSED: ['closed', 'CLOSED', 'calls go through'], OPEN: ['open', 'OPEN', 'calls blocked: fallback at once'], HALF_OPEN: ['half', 'HALF-OPEN', 'trial calls only'], NONE: ['none', 'no breaker', ''] };
+
+function breakerHTML() {
+  const s = STATE[B.state];
+  let h = `<div class="st ${s[0]}">${s[1]}<small>${B.timer !== null ? 'stays OPEN for ' + B.timer + ' s more' : s[2]}</small></div>`;
+  if (B.state === 'NONE') return h + kvThreads();
+  const size = B.state === 'HALF_OPEN' ? 2 : 5;
+  const cells = [];
+  for (let i = 0; i < size; i++) {
+    const c = B.win[i];
+    cells.push(`<span class="${c || ''}">${c === 'ok' ? '&#10003;' : c === 'bad' ? '&#10007;' : c === 'slow' ? '3s' : ''}</span>`);
+  }
+  h += `<div class="wl">${B.state === 'HALF_OPEN' ? 'trial calls (2)' : 'last 5 calls'}</div><div class="win">${cells.join('')}</div>`;
+  const n = B.win.length, fails = B.win.filter(x => x === 'bad').length, slows = B.win.filter(x => x === 'slow').length;
+  if (n < size) {
+    h += `<div class="rate"><span class="muted">${B.state === 'OPEN' ? 'not calling payment-service' : n + ' of ' + size + ' calls: too few to judge'}</span></div>`;
+  } else {
+    const fr = Math.round(fails * 100 / n), sr = Math.round(slows * 100 / n);
+    h += `<div class="rate">failed <b class="${fr >= 50 ? 'bad' : ''}">${fr}%</b> · slow <b class="${sr >= 50 ? 'bad' : ''}">${sr}%</b> <span class="muted">(limit 50%)</span></div>`;
+    if (B.state === 'OPEN') h += `<div class="rate"><span class="muted">not calling payment-service</span></div>`;
+  }
+  return h;
+}
+function kvThreads() { return `<div class="kv ${B.threads >= 200 ? 'bad' : ''}"><span>threads waiting on payment</span><b>${B.threads} / 200</b></div>`; }
+const paintB = () => Net.set('ord', { body: breakerHTML() });
+const paintP = () => Net.set('pay', { body: `<div class="kv ${P.mode === 'ok' ? '' : 'bad'}"><span>mode</span><b>${P.mode}</b></div><div class="kv ${P.hot ? 'chg' : ''}"><span>calls received</span><b>${P.calls}</b></div>` });
+function paintLog() { Net.set('pm', { body: '<div class="tw">' + (LOG.length ? LOG.map(l => `<div class="${l[1]}">${esc(l[0])}</div>`).join('') : '<div class="wait">ready</div>') + '</div>' }); }
+function log(text, cls) { LOG.push([text, cls || '']); LOG = LOG.slice(-5); paintLog(); }
+
+function stage(state, mode) {
+  B = { state: state || 'CLOSED', win: [], timer: null, threads: 0 };
+  P = { mode: mode || 'ok', calls: 0, hot: false };
+  LOG = [];
+  Net.node('pm', { x: 125, y: 280, label: 'Postman', sub: 'you', kind: 'client', w: 220 });
+  Net.node('ord', { x: 495, y: 280, label: 'order-service', sub: 'the caller · breaker lives here', kind: 'lb', w: 300 });
+  Net.node('pay', { x: 860, y: 280, label: 'payment-service', sub: 'the callee · no breaker', kind: 'db', w: 230 });
+  Net.link('pm', 'ord'); Net.link('ord', 'pay');
+  paintB(); paintP(); paintLog();
+}
+function record(r) { B.win.push(r); if (B.win.length > 5) B.win.shift(); paintB(); }
+function setState(s) { if (s !== 'OPEN') B.win = []; B.state = s; B.timer = null; paintB(); Net.flash('ord', s === 'OPEN' ? 'bad' : 'ok'); }
+
+// one order through the breaker. result: 'ok' | 'bad' | 'slow'
+async function order(ctx, id, result, quick) {
+  const d = quick ? 450 : 800;
+  log(`POST /orders?orderId=${id}`, 'cmd');
+  await send('pm', 'ord', 'order ' + id, '', d);
+  Net.check(ctx);
+  if (B.state === 'OPEN') {
+    await send('ord', 'pm', 'fallback', 'bad', d);
+    Net.check(ctx);
+    log('FALLBACK: circuit OPEN, payment not called', 'fb');
+    return;
+  }
+  await send('ord', 'pay', 'pay', '', result === 'slow' ? 2200 : d);
+  Net.check(ctx);
+  P.calls++; P.hot = true; paintP(); P.hot = false;
+  await send('pay', 'ord', result === 'bad' ? '500' : 'OK', result === 'bad' ? 'bad' : 'ok', d);
+  Net.check(ctx);
+  record(result);
+  await send('ord', 'pm', result === 'bad' ? 'fallback' : 'OK', result === 'bad' ? 'bad' : 'ok', d);
+  Net.check(ctx);
+  log(result === 'bad' ? 'FALLBACK: payment failed (500)' : 'payment done' + (result === 'slow' ? ' (after 3 s)' : ''), result === 'bad' ? 'fb' : 'ok');
+}
+async function countdown(ctx, from) {
+  for (let s = from; s >= 0; s -= 2) { B.timer = s; paintB(); await wait(ctx, 450); }
+  B.timer = null;
+}
+async function chaos(ctx, mode) {
+  log(`POST /chaos?mode=${mode}`, 'cmd');
+  await send('pm', 'pay', mode, '', 900);
+  Net.check(ctx);
+  P.mode = mode; paintP();
+}
+
+// the panel: commands, then the properties at work in this step
+function setRows(rows, props) {
+  let h = '';
+  if (rows.length) {
+    h += '<table class="ct"><tr><th>postman</th><th>reply</th></tr>';
+    rows.forEach(r => { h += `<tr><td class="c"><code>${esc(r[0])}</code></td><td class="m">${r[1]}</td></tr>`; });
+    h += '</table>';
+  }
+  if (props.length) {
+    h += '<table class="ct"><tr><th>property (order-service)</th><th>value</th><th>meaning</th></tr>';
+    props.forEach(k => { const p = PROPS[k]; h += `<tr><td class="c"><code>${p[0]}</code></td><td class="v">${p[1]}</td><td class="m">${p[2]}</td></tr>`; });
+    h += '</table>';
+  }
+  $('#code').innerHTML = h;
+  $('#final').classList.remove('hidden');
+}
+const CB = 'resilience4j.circuitbreaker.instances.payment.', RT = 'resilience4j.retry.instances.payment.';
+const PROPS = {
+  type: [CB + 'sliding-window-type', 'COUNT_BASED', 'Judge on the last N calls (TIME_BASED = the last N seconds)'],
+  size: [CB + 'sliding-window-size', '5', 'N = the last 5 calls'],
+  min: [CB + 'minimum-number-of-calls', '5', 'Don\'t judge before 5 calls'],
+  fail: [CB + 'failure-rate-threshold', '50', '50% or more failed → OPEN'],
+  slowd: [CB + 'slow-call-duration-threshold', '2s', 'Slower than 2 s = a slow call'],
+  slowr: [CB + 'slow-call-rate-threshold', '50', '50% or more slow → OPEN, even with no errors'],
+  wait: [CB + 'wait-duration-in-open-state', '10s', 'Stay OPEN for 10 s: no calls, fallback at once'],
+  auto: [CB + 'automatic-transition-from-open-to-half-open-enabled', 'true', 'After 10 s, go to HALF-OPEN by itself'],
+  half: [CB + 'permitted-number-of-calls-in-half-open-state', '2', 'HALF-OPEN lets 2 trial calls through: fine → CLOSED, failing → OPEN'],
+  ra: [RT + 'max-attempts', '3', 'Up to 3 tries per request (1 call + 2 retries)'],
+  rw: [RT + 'wait-duration', '500ms', 'Wait 0.5 s between tries'],
+  ri: [RT + 'ignore-exceptions', 'CallNotPermittedException', 'Breaker OPEN → don\'t retry, fail fast']
+};
+
+// ================= 1: without a breaker =================
+function setup1() {
+  stage('NONE', 'slow');
+  setRows([['POST /orders?orderId=1 … (many)', 'nothing comes back: every request waits for payment-service']], []);
+}
+async function run1(ctx) {
+  say('payment-service is <b>hanging</b>. order-service has no breaker, so it keeps calling and waiting.');
+  await Net.beat(ctx, 1800);
+  for (let i = 1; i <= 3; i++) {
+    log(`POST /orders?orderId=${i}`, 'cmd');
+    await send('pm', 'ord', 'order ' + i, '', 450);
+    Net.check(ctx);
+    stuck('ord', 'pay', 'pay');
+    P.calls++; paintP();
+    B.threads += 1; paintB();
+    await wait(ctx, 300);
+  }
+  say('Each waiting request holds a <b>thread</b>. More orders keep coming…');
+  for (let t = 3; t <= 200; t += 33) { B.threads = Math.min(t, 200); paintB(); await wait(ctx, 300); }
+  B.threads = 200; paintB();
+  Net.set('ord', { state: 'down', badge: 'out of threads', badgeCls: 'bad' });
+  log('… no reply (timeout)', 'err');
+  say('All 200 threads are stuck waiting. order-service is <b>down too</b>, though nothing is wrong with its own code: a <b>cascading failure</b>.', 'err');
+}
+
+// ================= 2: closed =================
+function setup2() {
+  stage('CLOSED', 'ok');
+  setRows([['POST /orders?orderId=1 … 5', 'payment done   [breaker: CLOSED]'], ['GET /breaker', 'state: CLOSED | calls in window: 5 | failed: 0 | failure rate: 0.0%']], ['type', 'size', 'min', 'fail']);
+}
+async function run2(ctx) {
+  say('A circuit breaker sits <b>inside order-service</b>, around its calls to payment-service. It starts <b>CLOSED</b>: calls go through.');
+  await Net.beat(ctx, 2000);
+  for (let i = 1; i <= 3; i++) await order(ctx, i, 'ok', true);
+  say('It remembers the <b>last 5 calls</b>. With only 3, it doesn\'t judge yet.');
+  await Net.beat(ctx, 2000);
+  for (let i = 4; i <= 5; i++) await order(ctx, i, 'ok', true);
+  say('5 calls, 0% failed. Everything is normal: <b>CLOSED</b> means "keep calling".', 'win');
+}
+
+// ================= 3: open =================
+function setup3() {
+  stage('CLOSED', 'ok');
+  setRows([['POST /chaos?mode=fail  (port 9031)', 'payment-service mode: fail'], ['POST /orders … (5 calls)', 'FALLBACK: payment failed … [breaker: CLOSED], then OPEN on the 5th'], ['POST /orders (while OPEN)', 'FALLBACK: circuit is OPEN, payment-service was NOT called'], ['GET /breaker', 'state: OPEN | failed: 3 | failure rate: 60.0% | rejected while OPEN: 1']], ['min', 'fail', 'wait']);
+}
+async function run3(ctx) {
+  await order(ctx, 1, 'ok', true);
+  await order(ctx, 2, 'ok', true);
+  say('payment-service starts <b>failing</b>.');
+  await chaos(ctx, 'fail');
+  for (let i = 3; i <= 5; i++) await order(ctx, i, 'bad', true);
+  say('5 calls, 3 failed = <b>60%</b>, above the 50% limit…', 'err');
+  await Net.beat(ctx, 1800);
+  setState('OPEN');
+  say('…so the breaker trips: <b>OPEN</b>.', 'err');
+  await Net.beat(ctx, 1600);
+  await order(ctx, 6, 'bad');
+  say('Order 6 gets the fallback <b>at once</b>. payment-service received <b>no call</b>: it gets room to recover, and order-service wastes no threads.', 'win');
+  await Net.beat(ctx, 2200);
+  say('It stays OPEN for <b>10 seconds</b>.');
+  await countdown(ctx, 10);
+}
+
+// ================= 4: half-open → closed =================
+function setup4() {
+  stage('OPEN', 'fail');
+  B.timer = 10; paintB();
+  setRows([['POST /chaos?mode=ok', 'payment-service is fixed'], ['GET /breaker  (after 10 s)', 'state: HALF_OPEN'], ['POST /orders (2 trial calls)', 'payment done [breaker: HALF_OPEN], then [breaker: CLOSED]']], ['wait', 'auto', 'half']);
+}
+async function run4(ctx) {
+  say('The breaker is OPEN. Meanwhile payment-service gets <b>fixed</b>.');
+  await chaos(ctx, 'ok');
+  await countdown(ctx, 8);
+  setState('HALF_OPEN');
+  say('10 s are up: <b>HALF-OPEN</b>. "Let me try a couple of calls and see."');
+  await Net.beat(ctx, 2000);
+  await order(ctx, 7, 'ok');
+  await order(ctx, 8, 'ok');
+  say('Both trial calls worked…');
+  await Net.beat(ctx, 1400);
+  setState('CLOSED');
+  say('…so the breaker <b>closes</b> again and normal traffic resumes, with a fresh window.', 'win');
+}
+
+// ================= 5: half-open → open =================
+function setup5() {
+  stage('OPEN', 'fail');
+  B.timer = 4; paintB();
+  setRows([['GET /breaker  (after 10 s)', 'state: HALF_OPEN'], ['POST /orders (2 trial calls)', 'FALLBACK: payment failed [breaker: HALF_OPEN], then [breaker: OPEN]']], ['half', 'wait']);
+}
+async function run5(ctx) {
+  say('Same wait, but this time payment-service is <b>still broken</b>.');
+  await countdown(ctx, 4);
+  setState('HALF_OPEN');
+  say('HALF-OPEN: 2 trial calls.');
+  await Net.beat(ctx, 1400);
+  await order(ctx, 9, 'bad');
+  await order(ctx, 10, 'bad');
+  setState('OPEN');
+  say('Trials failed: straight back to <b>OPEN</b> for another 10 s. Only 2 calls were risked, not all traffic.', 'err');
+  await countdown(ctx, 10);
+  say('The cycle repeats: OPEN → HALF-OPEN → (works? CLOSED : OPEN).', 'win');
+}
+
+// ================= 6: slow calls =================
+function setup6() {
+  stage('CLOSED', 'ok');
+  setRows([['POST /chaos?mode=slow', 'every payment takes 3 s'], ['POST /orders … (5 calls)', 'payment done (after 3 s each), the 5th: [breaker: OPEN]'], ['GET /breaker', 'state: OPEN | failed: 0 | slow: 5 | failure rate: 0.0% | slow rate: 100.0%']], ['slowd', 'slowr']);
+}
+async function run6(ctx) {
+  say('No errors this time: payment-service just becomes <b>slow</b> (3 s per call).');
+  await chaos(ctx, 'slow');
+  for (let i = 1; i <= 5; i++) await order(ctx, i, 'slow', true);
+  say('Every call succeeded, but each took more than 2 s: <b>100% slow</b>.', 'err');
+  await Net.beat(ctx, 1600);
+  setState('OPEN');
+  say('The breaker opens on the <b>slow-call rate</b>, even with 0% failures. Slow is as dangerous as down: it holds threads (step 1).', 'win');
+}
+
+// ================= 7: retry + breaker =================
+function setup7() {
+  stage('CLOSED', 'fail');
+  setRows([['POST /orders-with-retry?orderId=1', '3 calls reach payment-service; FALLBACK [breaker: CLOSED]'], ['POST /orders-with-retry?orderId=2', '2 calls, then the breaker opens; 3rd try refused, not retried: FALLBACK circuit OPEN'], ['POST /orders-with-retry?orderId=3', 'instant FALLBACK, 0 calls']], ['ra', 'rw', 'ri']);
+}
+async function attempt(ctx, n) {
+  log(`  try ${n}`, 'wait');
+  await send('ord', 'pay', 'try ' + n, '', 550);
+  Net.check(ctx);
+  P.calls++; paintP();
+  await send('pay', 'ord', '500', 'bad', 450);
+  Net.check(ctx);
+  record('bad');
+}
+async function run7(ctx) {
+  say('Retry also lives in <b>order-service</b>. Postman sends <b>one</b> request; order-service may try payment-service 3 times.');
+  await Net.beat(ctx, 2200);
+  log('POST /orders-with-retry?orderId=1', 'cmd');
+  await send('pm', 'ord', 'order 1', '', 600);
+  Net.check(ctx);
+  for (let t = 1; t <= 3; t++) await attempt(ctx, t);
+  await send('ord', 'pm', 'fallback', 'bad', 500);
+  Net.check(ctx);
+  log('FALLBACK: payment failed (500)', 'fb');
+  say('One request, <b>3 calls</b> in the breaker\'s window. Retries fill it 3× faster.');
+  await Net.beat(ctx, 2200);
+  log('POST /orders-with-retry?orderId=2', 'cmd');
+  await send('pm', 'ord', 'order 2', '', 600);
+  Net.check(ctx);
+  for (let t = 1; t <= 2; t++) await attempt(ctx, t);
+  setState('OPEN');
+  say('After 2 more tries the window is full at 100%: <b>OPEN</b>. The 3rd try is refused…', 'err');
+  await Net.beat(ctx, 1800);
+  await send('ord', 'pm', 'fallback', 'bad', 500);
+  Net.check(ctx);
+  log('FALLBACK: circuit OPEN', 'fb');
+  say('…and <b>not retried</b>: retrying a blocked call would be pointless.');
+  await Net.beat(ctx, 1800);
+  log('POST /orders-with-retry?orderId=3', 'cmd');
+  await send('pm', 'ord', 'order 3', '', 600);
+  Net.check(ctx);
+  await send('ord', 'pm', 'fallback', 'bad', 500);
+  Net.check(ctx);
+  log('FALLBACK: circuit OPEN', 'fb');
+  say('Retry handles a <b>brief</b> glitch; the breaker stops hammering a service that is <b>really down</b>.', 'win');
+}
+
+// ================= 8: cheat sheet =================
+const SHEET = [
+  ['sliding-window-type', 'COUNT_BASED', 'Judge on the last N calls', '2'],
+  ['sliding-window-size', '5', 'N = 5', '2'],
+  ['minimum-number-of-calls', '5', 'Don\'t judge before 5 calls', '2, 3'],
+  ['failure-rate-threshold', '50', '≥ 50% failed → OPEN', '3'],
+  ['wait-duration-in-open-state', '10s', 'How long OPEN lasts', '3, 4, 5'],
+  ['automatic-transition-…-to-half-open-enabled', 'true', 'Go HALF-OPEN by itself after 10 s', '4'],
+  ['permitted-number-of-calls-in-half-open-state', '2', 'Trial calls in HALF-OPEN', '4, 5'],
+  ['slow-call-duration-threshold', '2s', 'Slower = slow call', '6'],
+  ['slow-call-rate-threshold', '50', '≥ 50% slow → OPEN', '6'],
+  ['retry … max-attempts', '3', 'Tries per request', '7'],
+  ['retry … wait-duration', '500ms', 'Pause between tries', '7'],
+  ['retry … ignore-exceptions', 'CallNotPermittedException', 'Don\'t retry when OPEN', '7']
+];
+const sheetHTML = n => '<table class="sheet"><tr><th>property</th><th>value</th><th>meaning</th><th>step</th></tr>' + SHEET.map((r, i) => `<tr class="${i < n ? '' : 'hide'}"><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('') + '</table>';
+function setup8() {
+  Net.node('board', { x: 500, y: 280, label: 'application.properties (order-service)', kind: 'proxy', w: 920, body: sheetHTML(0) });
+  $('#final').classList.add('hidden');
+}
+async function run8(ctx) {
+  say('Every setting, and the step that shows it.');
+  for (let i = 1; i <= SHEET.length; i++) { await wait(ctx, 500); Net.set('board', { body: sheetHTML(i) }); }
+  say('<b>CLOSED</b> = call · <b>OPEN</b> = don\'t call, fallback · <b>HALF-OPEN</b> = test with a few calls.', 'win');
+}
+
+// ---------- question before each step, answer after ----------
+const QA = [
+  { q: 'payment-service hangs. Why does order-service go down too?', a: ['Each request waits for payment-service and holds a thread while it waits.', 'When all threads are waiting, order-service can\'t serve anyone: a cascading failure.'] },
+  { q: 'Where does the circuit breaker live: in the caller or in the service being called?', a: ['In the caller (order-service). It protects order-service from a bad payment-service.', 'payment-service doesn\'t know a breaker exists.'] },
+  { q: '3 of the last 5 calls failed. What does the breaker do, and what does payment-service see next?', a: ['60% ≥ 50%: it opens.', 'While OPEN, every request gets the fallback at once; payment-service receives no calls.'] },
+  { q: 'After 10 s OPEN, how does the breaker find out whether payment-service is back?', a: ['It goes HALF-OPEN and lets 2 trial calls through.', 'Both fine → CLOSED. Failing → OPEN again for another 10 s.'] },
+  { q: 'The trial calls in HALF-OPEN fail. What happens?', a: ['Back to OPEN, and a new 10 s wait.', 'Only 2 calls were risked, not the full traffic.'] },
+  { q: 'payment-service never errors, but every call takes 3 s. Does the breaker open?', a: ['Yes: calls over 2 s count as slow, and 100% slow ≥ 50%.', 'Slow is as dangerous as down: it holds threads.'] },
+  { q: 'Postman sends one request with retry on. How many calls can reach payment-service?', a: ['Up to 3 (max-attempts), all inside order-service.', 'Each try counts in the breaker\'s window, so it opens sooner.', 'Once OPEN, the refused call is not retried.'] },
+  { q: 'Which three states, and what does each one mean?', a: ['CLOSED: call normally, count failures.', 'OPEN: don\'t call, fallback at once, for 10 s.', 'HALF-OPEN: a few trial calls decide.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  $('#ansList').innerHTML = QA[i].a.map(t => `<li>${t}</li>`).join('');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const U = t => `<b>Use case:</b> ${t}`;
+Net.scenarios([
+  { label: '1 No breaker', story: U('order-service calls payment-service for every order. payment-service starts hanging.'), setup: setup1, run: run1 },
+  { label: '2 Closed', story: U('Everything is healthy.'), setup: setup2, run: run2 },
+  { label: '3 Open', story: U('payment-service starts returning errors.'), setup: setup3, run: run3 },
+  { label: '4 Half-open → closed', story: U('payment-service is fixed while the breaker is open.'), setup: setup4, run: run4 },
+  { label: '5 Half-open → open', story: U('payment-service is still broken when the wait ends.'), setup: setup5, run: run5 },
+  { label: '6 Slow calls', story: U('payment-service answers, but takes 3 s each time.'), setup: setup6, run: run6 },
+  { label: '7 Retry + breaker', story: U('order-service also retries failed payments.'), setup: setup7, run: run7 },
+  { label: '8 Cheat sheet', story: U('Every setting in application.properties.'), setup: setup8, run: run8 }
+], '');
+</script>
+<script>
+// theme switch: mono (default) or neon
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>
