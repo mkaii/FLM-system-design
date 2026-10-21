@@ -1,0 +1,220 @@
+{
+  "info": {
+    "name": "Class 69 - Circuit Breaker code (Resilience4j)",
+    "description": "order-service (9030) calls payment-service (9031) through a circuit breaker. Start payment-service, then order-service. Watch both consoles.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Watch the breaker",
+      "description": "Use these between steps.",
+      "item": [
+        {
+          "name": "Breaker state and numbers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "state, calls in the window, failed, slow, failure rate, slow rate, rejected while OPEN. Rate -1 = fewer than 5 calls so far.",
+            "url": {
+              "raw": "http://localhost:9030/breaker",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9030",
+              "path": [
+                "breaker"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Actuator: circuit breakers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Same numbers from Resilience4j itself.",
+            "url": {
+              "raw": "http://localhost:9030/actuator/circuitbreakers",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9030",
+              "path": [
+                "actuator",
+                "circuitbreakers"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Actuator: breaker events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Every SUCCESS, ERROR, NOT_PERMITTED and STATE_TRANSITION, with timestamps.",
+            "url": {
+              "raw": "http://localhost:9030/actuator/circuitbreakerevents",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9030",
+              "path": [
+                "actuator",
+                "circuitbreakerevents"
+              ],
+              "query": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. payment-service switch",
+      "description": "payment-service (9031) has no breaker. This switch makes it healthy, failing (HTTP 500) or slow (3 s).",
+      "item": [
+        {
+          "name": "Mode: ok",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Healthy.",
+            "url": {
+              "raw": "http://localhost:9031/chaos?mode=ok",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9031",
+              "path": [
+                "chaos"
+              ],
+              "query": [
+                {
+                  "key": "mode",
+                  "value": "ok"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mode: fail",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Every /pay returns HTTP 500.",
+            "url": {
+              "raw": "http://localhost:9031/chaos?mode=fail",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9031",
+              "path": [
+                "chaos"
+              ],
+              "query": [
+                {
+                  "key": "mode",
+                  "value": "fail"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mode: slow",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Every /pay waits 3 s, then succeeds (slower than the 2 s slow-call limit).",
+            "url": {
+              "raw": "http://localhost:9031/chaos?mode=slow",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9031",
+              "path": [
+                "chaos"
+              ],
+              "query": [
+                {
+                  "key": "mode",
+                  "value": "slow"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Orders (circuit breaker only)",
+      "description": "Send the same request several times, changing orderId.",
+      "item": [
+        {
+          "name": "Place order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "CLOSED: calls payment-service.\n\nScenarios:\n- mode ok: 'payment done', state CLOSED.\n- mode fail: the first 4 fail but stay CLOSED (fewer than 5 calls); the 5th makes the rate >= 50% -> OPEN.\n- OPEN: 'circuit is OPEN, payment-service was NOT called' (payment-service console stays silent).\n- After 10 s: HALF_OPEN. 2 good calls -> CLOSED; failures -> OPEN again.\n- mode slow: 5 calls of 3 s -> OPEN on slow rate, with 0 failures.\n- payment-service stopped: ResourceAccessException, counted as a failure.",
+            "url": {
+              "raw": "http://localhost:9030/orders?orderId=1",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9030",
+              "path": [
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "orderId",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Orders with retry + circuit breaker",
+      "description": "Retry wraps the breaker: one request tries payment-service up to 3 times, and every try is counted in the breaker's window.",
+      "item": [
+        {
+          "name": "Place order with retry",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "With mode fail and a fresh CLOSED breaker:\n- 1st request: 3 calls reach payment-service (window 3/5, still CLOSED).\n- 2nd request: 2 calls, the window is full at 100% -> OPEN; the 3rd try is refused and NOT retried.\n- 3rd request: instant fallback, 0 calls to payment-service.",
+            "url": {
+              "raw": "http://localhost:9030/orders-with-retry?orderId=30",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "9030",
+              "path": [
+                "orders-with-retry"
+              ],
+              "query": [
+                {
+                  "key": "orderId",
+                  "value": "30"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+Class 69: Circuit Breaker in Spring Boot (Resilience4j code)
+
+Concepts and animation: class 68 (../class-68-circuit-breaker/animations/circuit-breaker.html)
+Postman:   circuit-breaker.postman_collection.json
+Start:     payment-service first, then order-service (both are plain Spring Boot apps, no Redis or DB)
+
+   Project           Port   Role
+   order-service     9030   the caller. The circuit breaker and the retry live HERE
+   payment-service   9031   the callee. No breaker. POST /chaos?mode=ok|fail|slow switches its behaviour
+
+   Endpoints
+   POST /orders?orderId=1              order-service: circuit breaker only
+   POST /orders-with-retry?orderId=1   order-service: retry + circuit breaker
+   GET  /breaker                       order-service: state, calls in window, failed, slow, rates, rejected while OPEN
+   GET  /actuator/circuitbreakers       same numbers from Resilience4j;  /actuator/circuitbreakerevents = every event
+   POST /chaos?mode=fail               payment-service: ok | fail (HTTP 500) | slow (3 s)
+
+1. Code
+   - pom: resilience4j-spring-boot4 (2.4.0), spring-boot-starter-aspectj, spring-boot-starter-actuator
+   - PaymentClient: @CircuitBreaker(name = "payment", fallbackMethod = "fallback")
+   - fallback(int orderId, Throwable error): same parameters + the error
+     CallNotPermittedException = the breaker was OPEN and did not even call
+   - application.properties: every line has a comment (also the animation's step 8)
+
+2. Demo with Postman  (all tested end to end)
+   a. mode ok, 2 orders                    -> payment done, CLOSED; GET /breaker: rate -1 (fewer than 5 calls)
+   b. mode fail, orders 3, 4               -> FALLBACK payment failed, still CLOSED (fewer than 5 calls)
+      order 5                              -> 3/5 failed = 60% -> OPEN
+   c. orders while OPEN                    -> FALLBACK circuit OPEN; payment-service console stays silent
+   d. mode ok, wait 10 s, GET /breaker     -> HALF_OPEN; 2 orders -> CLOSED
+   e. mode fail, 5 orders, wait 10 s       -> HALF_OPEN; 2 failing orders -> OPEN again
+   f. mode slow, 5 orders (3 s each)       -> OPEN with failed 0, slow 5 (slow rate 100%)
+   g. retry: CLOSED breaker, mode fail
+        1st /orders-with-retry             -> 3 calls reach payment-service, window 3/5
+        2nd                                -> 2 calls, window full at 100% -> OPEN; 3rd try refused, NOT retried
+        3rd                                -> instant fallback, 0 calls
+   h. stop payment-service, POST /orders   -> FALLBACK (ResourceAccessException): down counts as a failure
+
+3. Retry vs circuit breaker in code
+   - Both live in order-service. Retry = try again for a brief glitch. Breaker = stop when it is really down
+   - @Retry wraps @CircuitBreaker (Resilience4j's default order): every try is counted in the window
+   - The fallback goes on @Retry (the outer one). If it were on @CircuitBreaker, the retry would see "success" and never retry
+   - ignore-exceptions=CallNotPermittedException: don't retry while the breaker is OPEN
