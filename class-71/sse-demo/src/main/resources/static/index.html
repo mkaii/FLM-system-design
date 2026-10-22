@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<body style="font-family: sans-serif; text-align: center; margin-top: 80px;">
+  <p>Order #7 - where is my rider?</p>
+  <h1 id="status">waiting for updates…</h1>
+
+  <script>
+    // The CUSTOMER's app: one GET /events that stays open
+    var source = new EventSource("/events");
+
+    // runs every time the server pushes a message
+    source.onmessage = function (event) {
+      document.getElementById("status").textContent = event.data;
+    };
+  </script>
+</body>
+</html>

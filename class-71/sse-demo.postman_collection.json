@@ -1,0 +1,104 @@
+{
+  "info": {
+    "name": "Class 71 - Server-Sent Events (SSE)",
+    "description": "sse-demo on port 8080.\n\n1. Run SseDemoApplication.\n2. Open http://localhost:8080 in the browser: that is the CUSTOMER's screen, and it calls GET /events once and keeps the line open.\n3. Send the RIDER requests below: the browser heading changes without a reload.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Rider: 2 km away",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "description": "The rider's app reports a new location. The server pushes it into the customer's open line.\n\nExpect: `sent: 2 km away`, and the browser shows **2 km away**.\n\nIf you get `no customer is listening yet`, open http://localhost:8080 first.",
+        "url": {
+          "raw": "http://localhost:8080/send?msg=2 km away",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "send"
+          ],
+          "query": [
+            {
+              "key": "msg",
+              "value": "2 km away"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "2. Rider: 1 km away",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "description": "Expect: the browser changes to **1 km away**.",
+        "url": {
+          "raw": "http://localhost:8080/send?msg=1 km away",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "send"
+          ],
+          "query": [
+            {
+              "key": "msg",
+              "value": "1 km away"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "3. Rider: at your door",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "description": "Expect: the browser changes to **at your door**.",
+        "url": {
+          "raw": "http://localhost:8080/send?msg=at your door",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "send"
+          ],
+          "query": [
+            {
+              "key": "msg",
+              "value": "at your door"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "4. Customer line (optional, open in the browser instead)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "description": "This is the CUSTOMER's call. It never finishes: it keeps receiving messages.\n\nBest seen in the browser (http://localhost:8080) or with `curl -N http://localhost:8080/events`. Postman shows the stream too, but while it is open, Postman can't send other requests from the same tab.\n\nNote: opening this replaces the browser's line (the demo keeps only one customer).",
+        "url": {
+          "raw": "http://localhost:8080/events",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "events"
+          ],
+          "query": []
+        }
+      }
+    }
+  ]
+}
