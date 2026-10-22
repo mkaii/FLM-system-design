@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TCP, UDP and HTTP</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<link rel="stylesheet" href="comm.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>TCP vs UDP, and what changes from HTTP/1.0 to HTTP/3</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="tcp-http.html">TCP, UDP and HTTP</a><a href="sse-websocket.html">SSE and WebSocket</a><a href="webrtc.html">WebRTC</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final"><div><div class="qt">In this step</div><div id="code"></div></div></div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+<script src="net-core.js"></script>
+<script src="common.js"></script>
+<script src="tcp-http.js"></script>
+</body>
+</html>

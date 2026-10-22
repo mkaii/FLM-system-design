@@ -1,0 +1,15 @@
+Class 71: TCP vs UDP, HTTP versions in detail, SSE, WebSocket, WebRTC
+
+Animations (three pages, linked to each other; ideas only, no code):
+   animations/tcp-http.html        TCP vs UDP (packet 3 lost), HTTP/1.0 vs 1.1 (handshakes), HTTP/2 vs 3 (/menu /offers /cart, one lost packet),
+                                   DevTools Protocol column + alt-svc
+   animations/sse-websocket.html   SSE (customer GET /events once, rider POST /send each time, one way), WebSocket (both ways on /chat)
+   animations/webrtc.html          the problem (private addresses), STUN (router rewrites "from", STUN reports it), signaling (swap addresses),
+                                   direct call (router's door note), TURN (relay when blocked), summary
+
+Demos (Spring Boot, controller only, no DB):
+   sse-demo/         port 8080   GET /events (customer, stays open)  POST /send?msg=... (rider)
+                                 open http://localhost:8080, then send from Postman: sse-demo.postman_collection.json
+   websocket-demo/   port 8081   /chat (both sides)
+                                 open http://localhost:8081 (customer), Postman -> New -> WebSocket -> ws://localhost:8081/chat (rider)
+                                 rider -> customer: send in Postman.  customer -> rider: Send button on the page
