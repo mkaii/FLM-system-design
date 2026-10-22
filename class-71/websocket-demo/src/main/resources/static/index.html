@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<body style="font-family: sans-serif; text-align: center; margin-top: 80px;">
+  <p>Order #7 - chat with your rider</p>
+  <h1 id="status">waiting for the rider…</h1>
+
+  <input id="text" placeholder="message to rider" value="please ring the bell">
+  <button onclick="ws.send(document.getElementById('text').value)">Send</button>
+
+  <script>
+    // The CUSTOMER's app: open the line to /chat once
+    var ws = new WebSocket("ws://localhost:8081/chat");
+
+    // rider -> customer: runs every time a message arrives on the line
+    ws.onmessage = function (event) {
+      document.getElementById("status").textContent = event.data;
+    };
+  </script>
+</body>
+</html>
