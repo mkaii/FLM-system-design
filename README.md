@@ -12,6 +12,9 @@ The blocks:
 - **Classes 53–55** — SQL: CRUD, connecting Spring Boot to MySQL, indexes
 - **Classes 56–59** — scaling: load balancing, CAP theorem, NoSQL and MongoDB, SQL vs MongoDB
 - **Classes 60–67** — Redis: data types, caching, Pub/Sub, Streams, atomic updates, distributed locks
+- **Classes 68–69** — circuit breaker and retry (Resilience4j)
+- **Classes 70–71** — how clients and servers talk: TCP/UDP, HTTP/1.1–3, HTTPS, polling, SSE, WebSocket, WebRTC
+- **Classes 72–73** — system design case study: WhatsApp
 
 Most classes from 54 on have a `class-plan.txt` and an `animations/` folder (open the HTML files in a browser).
 
@@ -361,4 +364,33 @@ Most classes from 54 on have a `class-plan.txt` and an `animations/` folder (ope
 - Single-threaded Redis: each command is atomic, but `GET` then `SET` can still lose an update, so use `INCR` (`single-threaded-talk.txt`)
 - Distributed locks in redis-cli, across `replica1.txt`, `replica2.txt`, `watcher.txt`, `race.txt`: `SET … NX EX`, expiry, releasing only your own lock with `EVAL`, a final booked-key guard, several seats, and 10 clients racing
 - Animations: atomic updates, and the seat lock from a Java lock to a Redis lock
+
+## class-68-circuit-breaker
+- Why a circuit breaker: a hanging service makes its callers wait until they run out of threads (cascading failure)
+- It lives in the caller; the three states: CLOSED (call), OPEN (fail fast with a fallback), HALF-OPEN (a few trial calls)
+- Animation: 8 steps, including slow calls and retry + breaker, with every `application.properties` setting explained
+
+## class-69-circuit-breaker-code
+- The code for class 68: `order-service` calls `payment-service` through Resilience4j `@CircuitBreaker` and `@Retry`
+- `payment-service` has a `/chaos` switch to make it healthy, failing or slow; `/breaker` and the actuator show the state
+- Postman collection for every case, tested end to end; `application.properties` is grouped by test
+
+## class-70-client-server-communication
+- Two animation pages using a Swiggy example: HTTP/1.1 → 2 → 3 (one lost packet freezing everything vs one file) and HTTPS (the café Wi-Fi snoop)
+- Server → client: short polling, long polling, SSE, WebSocket and WebRTC, each with "used for"
+- DevTools demo: the Protocol column shows `h3` / `h2` / `http/1.1`
+
+## class-71-sse-websocket-webrtc
+- `sse-demo/` (port 8080): the customer calls `GET /events` once, the rider calls `POST /send`; Postman collection included
+- `websocket-demo/` (port 8081): customer and rider both connect to `/chat` and talk both ways
+- Animations: TCP vs UDP and HTTP versions, SSE vs WebSocket, and WebRTC (STUN, signaling, direct call, TURN)
+- `teaching-notes.txt`: what to say and what to click, for both demos
+
+## class-72-whatsapp-1
+- WhatsApp system design notes (handwritten PDFs from class and an earlier session)
+
+## class-73-whatsapp-2
+- Two animation pages: requirements → core entities → why WebSocket → APIs → data model (DynamoDB tables, the GSI, one transaction)
+- Then one chat server: the connection map and how many connections fit, sending a message, an offline device, and the ✓ / ✓✓ / blue ticks
+- Ends with the question for the next class: what happens with many chat servers
 
