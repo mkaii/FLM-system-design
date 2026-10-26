@@ -1,0 +1,53 @@
+Class 70: How clients and servers talk (HTTP versions, HTTPS, polling, SSE, WebSocket, WebRTC)
+
+Animations (two pages, linked to each other):
+   animations/http-versions.html      6 steps: HTTP basics, HTTP/1.1, HTTP/2, HTTP/3 (QUIC), HTTPS, summary + DevTools
+   animations/server-to-client.html   7 steps: the problem, short polling, long polling, SSE, WebSocket, WebRTC, which one when
+Use case all class: Swiggy. Page 1 = loading the menu page (12 files) and logging in. Page 2 = tracking the rider.
+Every step ends with "Used for".
+
+PART 1: HTTP versions and HTTPS  (http-versions.html)
+1. HTTP basics: client asks, server answers. The server can never speak first.
+   Our Spring Boot APIs = HTTP/1.1, no TLS (http://localhost)
+2. HTTP/1.1: one file per connection, max ~6 connections per site, a request round trip per file -> queue ("staircase")
+   Used for: older sites, inside data centres (load balancer -> Spring Boot)
+3. HTTP/2: one TCP connection, all files cut into frames and mixed (multiplexing), one handshake
+   Still: one lost packet freezes ALL files (TCP delivers in order = head-of-line blocking)
+   Used for: most websites, gRPC
+4. HTTP/3: QUIC on UDP, each file an independent stream -> a lost packet delays only its file
+   1 round trip setup; survives Wi-Fi -> 4G (connection ID)
+   Used for: Google, YouTube, Facebook, Cloudflare sites
+5. HTTPS = HTTP + TLS: hello, certificate ("I am swiggy.com", signed by a trusted authority), shared secret key, encrypted
+   Without it: anyone on café Wi-Fi reads the password
+   Used for: every public site; required for HTTP/2 in browsers and for HTTP/3
+
+LIVE DEMO (no setup): Chrome DevTools
+   View -> Developer -> Developer Tools -> Network tab -> right-click a column header -> tick "Protocol"
+   google.com / youtube.com  -> h3 and h2 rows
+   an older site             -> http/1.1
+   Click the padlock in the address bar -> certificate details (who issued it, valid until)
+
+PART 2: How the server talks back  (server-to-client.html)
+1. Problem: the server knows the rider moved, but can't tell the app (HTTP only answers)
+2. Short polling: ask every 2 s -> mostly "no", always a bit late. Used for: dashboards, job status
+3. Long polling: server holds the request until news -> instant, no empty answers. Used for: notifications, chat fallback
+4. SSE: one request (Accept: text/event-stream), server keeps writing events; one way only
+   Used for: live scores, order status, AI answers typing out (ChatGPT, Claude)
+5. WebSocket: GET + Upgrade: websocket -> 101 Switching Protocols -> two-way pipe; wss:// = over TLS
+   Used for: chat, live tracking, games, collaborative docs
+6. WebRTC: signaling (offer/answer via a server) + STUN (my public address) -> direct phone-to-phone media on UDP; TURN relays if blocked
+   Used for: Google Meet, WhatsApp/Discord calls, screen sharing
+7. Which one: delay okay -> polling; server -> client only -> SSE; both ways -> WebSocket; audio/video between users -> WebRTC
+
+LIVE DEMO (no setup)
+   WhatsApp Web -> DevTools Network -> filter "WS" -> click the connection -> Messages tab: frames arriving as you chat
+   ChatGPT or Claude -> DevTools Network -> the reply request has type "eventsource" / text/event-stream (SSE)
+
+Videos
+   Piyush Garg (Hindi)  WebSockets vs Polling vs SSE          https://www.youtube.com/watch?v=WS352jTTkPU
+   Shrayansh (Hindi)    Network Protocols, WebSocket vs WebRTC https://www.youtube.com/watch?v=JwTiZ9ENquI
+   Piyush Garg (Hindi)  How does WebRTC work?                 https://www.youtube.com/watch?v=pGAp5rxv6II
+   Be A Better Dev      Short vs Long Polling vs WebSockets   https://www.youtube.com/watch?v=ZBM28ZPlin8
+   Fireship             WebRTC in 100 Seconds                 https://www.youtube.com/watch?v=WmR9IMUD_CY
+   Hussein Nasser       WebRTC Crash Course (deep)            https://www.youtube.com/watch?v=FExZvpVvYxA
+   ByteMonk             WebRTC Deep Dive (SFU vs MCU)         https://www.youtube.com/watch?v=Kn_3uHaKz7Q

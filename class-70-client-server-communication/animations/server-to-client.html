@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Server to Client</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<link rel="stylesheet" href="comm.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>How the server talks back: polling, SSE, WebSocket, WebRTC</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a href="http-versions.html">HTTP versions + HTTPS</a><a class="on" href="server-to-client.html">Server → client</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final"><div><div class="qt">In this step</div><div id="code"></div></div></div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(580, 1.1);
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 750 });
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+const both = l => Promise.all(l);
+const tw = lines => '<div class="tw">' + lines.map(l => `<div class="${l[1] || ''}">${esc(l[0])}</div>`).join('') + '</div>';
+const kv = (k, v, cls) => `<div class="kv ${cls || ''}"><span>${k}</span><b>${v}</b></div>`;
+function panel(rows) {
+  $('#code').innerHTML = '<table class="ct">' + rows.map(r => `<tr class="${r[0] === 'Used for' ? 'use' : ''}"><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('') + '</table>';
+  $('#final').classList.remove('hidden');
+}
+
+// ---------- the same scene in steps 1-5: customer app, server, rider ----------
+// the rider sends their location to the server; the customer wants to see it
+let S;
+function appHTML() {
+  return `<div class="big ${S.fresh ? 'good' : S.stale ? 'bad' : ''}">${S.shown}</div><div class="cap">on your screen</div>`
+    + kv('requests sent', S.req) + kv('useful answers', S.useful, S.req && S.useful < S.req / 2 ? 'bad' : '');
+}
+const paintApp = () => Net.set('app', { body: appHTML() });
+const paintSrv = (lines) => Net.set('srv', { body: kv('rider is', S.real) + (lines ? tw(lines) : '') });
+function scene() {
+  S = { real: '3 km away', shown: '3 km away', fresh: false, stale: false, req: 0, useful: 0 };
+  Net.node('app', { x: 165, y: 290, label: 'Customer app', sub: 'order #7: where is my food?', kind: 'client', w: 270, body: appHTML() });
+  Net.node('srv', { x: 510, y: 290, label: 'Server', kind: 'db', w: 240, body: '' });
+  Net.node('rid', { x: 860, y: 290, label: 'Rider app', sub: 'sends GPS to the server', kind: 'server', w: 200, body: kv('position', '3 km away') });
+  Net.link('app', 'srv'); Net.link('srv', 'rid');
+  paintSrv();
+}
+// the rider moves: their app tells the server (this part is always a normal request)
+async function riderMoves(ctx, dist) {
+  Net.set('rid', { body: kv('position', dist, 'chg') });
+  await send('rid', 'srv', 'POST /location', '', 600);
+  Net.check(ctx);
+  S.real = dist; if (S.shown !== dist) { S.stale = true; S.fresh = false; }
+  paintSrv(); paintApp();
+}
+function show(dist) { S.shown = dist; S.stale = false; S.fresh = true; paintApp(); }
+
+// ================= 1: the problem =================
+function setup1() {
+  scene();
+  panel([['The problem', 'The server knows the rider moved. HTTP lets the customer app <b>ask</b>, but the server can never <b>speak first</b>'], ['What we need', 'A way to get news from server → client, quickly and cheaply'], ['Four answers', 'Short polling, long polling, server-sent events (SSE), WebSocket. And WebRTC for calls between two users']]);
+}
+async function run1(ctx) {
+  say('You ordered dosa. The rider is <b>3 km</b> away, and the app shows that.');
+  await Net.beat(ctx, 1800);
+  await riderMoves(ctx, '1 km away');
+  say('The rider moves. The <b>server</b> knows: 1 km.');
+  await Net.beat(ctx, 1800);
+  Net.flash('app', 'bad');
+  say('But your screen still says <b>3 km</b>. The server has news and no way to send it: HTTP only answers questions.', 'err');
+  await Net.beat(ctx, 2600);
+  say('Every technique on this page is a different answer to "how does the server tell the app?"', 'win');
+}
+
+// ================= 2: short polling =================
+function setup2() {
+  scene();
+  panel([['How', 'The app asks <b>every few seconds</b>: <code>GET /orders/7/rider</code>. The server answers at once, news or not'], ['Good', 'Simplest possible; works with any server, any HTTP'], ['Bad', 'Most answers are "nothing new" (wasted requests). News waits until the next ask (up to the interval). 1 million users × every 2 s = 500,000 requests a second'], ['Used for', 'Things where a few seconds of delay is fine: a dashboard refreshing, "is my report ready?", checking a payment status']]);
+}
+async function run2(ctx) {
+  say('Short polling: the app asks <b>every 2 seconds</b>, "anything new?"');
+  const moves = { 3: '2 km away', 6: '1 km away' };
+  for (let i = 1; i <= 7; i++) {
+    S.req++; paintApp();
+    await send('app', 'srv', 'any update?', '', 500);
+    Net.check(ctx);
+    const news = S.shown !== S.real;
+    if (news) S.useful++;
+    await send('srv', 'app', news ? S.real : 'no', news ? 'ok' : '', 500);
+    Net.check(ctx);
+    if (news) { show(S.real); say(`Finally, an answer with news: <b>${S.real}</b>. It waited for the next poll.`); }
+    else { S.fresh = false; paintApp(); if (i === 2) say('"No." "No." Most polls come back <b>empty</b>.'); }
+    if (moves[i]) { await riderMoves(ctx, moves[i]); say(`The rider moved to <b>${moves[i]}</b>, but the app won't know until it asks again.`, 'err'); }
+    await wait(ctx, 700);
+  }
+  say(`${S.req} requests, only ${S.useful} useful. Easy to build, but <b>wasteful</b> and always a bit late.`, 'win');
+}
+
+// ================= 3: long polling =================
+function setup3() {
+  scene();
+  panel([['How', 'The app asks, and the server <b>holds the request open</b> until there is news (or a timeout, say 30 s). Then the app asks again right away'], ['Good', 'News arrives almost instantly; no empty answers'], ['Bad', 'Each waiting user holds a request open on the server. Still one request per message, with headers every time'], ['Used for', 'Early Facebook and Gmail chat; notifications; a fallback when WebSocket is blocked (Socket.IO falls back to it)']]);
+}
+async function run3(ctx) {
+  say('Long polling: the app asks once, and the server <b>doesn\'t answer until there is news</b>.');
+  const moves = ['2 km away', '1 km away', 'at your door'];
+  for (let i = 0; i < 3; i++) {
+    S.req++; S.fresh = false; paintApp();
+    await send('app', 'srv', 'any update?', '', 500);
+    Net.check(ctx);
+    paintSrv([['holding the request ⏳', 'amb']]);
+    if (i === 0) say('The request <b>waits at the server</b>. No reply yet.');
+    await Net.beat(ctx, 1600);
+    await riderMoves(ctx, moves[i]);
+    paintSrv([['news! answer the held request', 'ok']]);
+    S.useful++;
+    await send('srv', 'app', moves[i], 'ok', 500);
+    Net.check(ctx);
+    show(moves[i]);
+    if (i === 0) say('The moment the rider moved, the server <b>answered the waiting request</b>. The app immediately asks again.');
+    await wait(ctx, 600);
+  }
+  paintSrv();
+  say(`${S.req} requests, ${S.useful} useful: no wasted answers, and news shows up <b>instantly</b>.`, 'win');
+}
+
+// ================= 4: SSE =================
+function setup4() {
+  scene();
+  panel([['How', 'The app opens <b>one</b> HTTP request with <code>Accept: text/event-stream</code>. The server never "finishes" the reply; it keeps writing events into it: <code>data: 1 km away</code>'], ['Direction', '<b>One way</b>: server → client only. To send something back, the app makes a normal request'], ['Good', 'Plain HTTP (works through proxies), the browser reconnects automatically, very simple on the server'], ['Used for', 'Live scores, stock prices, order status, news feeds, and AI chat answers typing out word by word (ChatGPT, Claude)']]);
+}
+async function run4(ctx) {
+  say('Server-sent events: the app makes <b>one</b> request and says "keep sending me events".');
+  S.req++; paintApp();
+  await send('app', 'srv', 'GET /orders/7/events', '', 600);
+  Net.check(ctx);
+  Net.linkSet('app', 'srv', { cls: 'on' });
+  paintSrv([['stream open → app', 'ok']]);
+  say('The connection <b>stays open</b>. Now the server can write to it whenever it likes.');
+  await Net.beat(ctx, 1800);
+  for (const d of ['2 km away', '1 km away', 'at your door']) {
+    await riderMoves(ctx, d);
+    S.useful++;
+    await send('srv', 'app', 'data: ' + d, 'ok', 500);
+    Net.check(ctx);
+    show(d);
+    await wait(ctx, 700);
+  }
+  say(`<b>1 request</b>, 3 updates, each one instant.`);
+  await Net.beat(ctx, 2000);
+  say('You want to tell the rider "ring the bell". SSE is <b>one way</b>, so that has to go as a separate normal request.', 'err');
+  await send('app', 'srv', 'POST /message (separate)', '', 700);
+  Net.check(ctx);
+  say('Perfect when updates only flow <b>server → client</b>.', 'win');
+}
+
+// ================= 5: WebSocket =================
+function setup5() {
+  scene();
+  panel([['How', 'Starts as HTTP: <code>GET /ws</code> with <code>Upgrade: websocket</code>. Server replies <code>101 Switching Protocols</code>. From then on it is no longer HTTP: a <b>two-way pipe</b> that stays open'], ['Direction', 'Both ways, any time, tiny messages (no headers per message)'], ['Cost', 'Every user keeps a connection open on the server: lots of open connections; needs care with load balancers (sticky sessions or Redis Pub/Sub to reach the right server)'], ['Secure version', '<code>wss://</code> = WebSocket over TLS, like <code>https://</code>'], ['Used for', 'Chat (WhatsApp Web, Slack), live rider tracking, multiplayer games, Google Docs-style collaborative editing, trading apps']]);
+}
+async function run5(ctx) {
+  say('WebSocket starts as a normal HTTP request that asks to <b>upgrade</b>.');
+  await send('app', 'srv', 'GET /ws · Upgrade: websocket', '', 700);
+  Net.check(ctx);
+  await send('srv', 'app', '101 Switching Protocols', 'ok', 700);
+  Net.check(ctx);
+  Net.linkSet('app', 'srv', { cls: 'on' });
+  paintSrv([['websocket open ⇄ app', 'ok']]);
+  say('From now on it is a <b>two-way pipe</b> that stays open.');
+  await Net.beat(ctx, 1800);
+  await riderMoves(ctx, '2 km away');
+  await send('srv', 'app', '2 km away', 'ok', 500);
+  Net.check(ctx);
+  S.useful++; show('2 km away');
+  say('Server → app: the location arrives instantly.');
+  await Net.beat(ctx, 1600);
+  await send('app', 'srv', '"please ring the bell"', '', 600);
+  Net.check(ctx);
+  await send('srv', 'rid', '"please ring the bell"', '', 600);
+  Net.check(ctx);
+  Net.set('rid', { body: kv('position', '2 km away') + tw([['💬 please ring the bell', 'amb']]) });
+  say('App → server: you reply <b>on the same connection</b>. Both directions, any time.');
+  await Net.beat(ctx, 2000);
+  for (const d of ['1 km away', 'at your door']) {
+    await riderMoves(ctx, d);
+    await send('srv', 'app', d, 'ok', 450);
+    Net.check(ctx);
+    S.useful++; show(d);
+  }
+  say('One connection, messages <b>both ways</b>, no new request per message: real-time.', 'win');
+}
+
+// ================= 6: WebRTC =================
+function setup6() {
+  Net.node('app', { x: 140, y: 400, label: 'Customer phone', sub: 'video call', kind: 'client', w: 220, body: tw([['ready', 'dim']]) });
+  Net.node('rid', { x: 860, y: 400, label: 'Rider phone', sub: 'video call', kind: 'client', w: 220, body: tw([['ready', 'dim']]) });
+  Net.node('sig', { x: 500, y: 110, label: 'Signaling server', sub: 'only introduces the two', kind: 'db', w: 260, body: tw([['', 'dim']]) });
+  Net.node('stun', { x: 500, y: 300, label: 'STUN server', sub: '"what is my public address?"', kind: 'proxy', w: 250, body: '' });
+  Net.link('app', 'sig'); Net.link('rid', 'sig');
+  Net.link('app', 'stun', { dashed: true }); Net.link('rid', 'stun', { dashed: true });
+  panel([['How', '1. <b>Signaling</b>: both phones exchange "offer" and "answer" (what video and audio they support) through a server, usually over a WebSocket. 2. <b>STUN</b>: each phone learns its public address. 3. The phones connect <b>directly</b> and stream audio and video'], ['Why direct', 'Lowest delay, and the company\'s servers don\'t carry the heavy video'], ['If blocked', 'Some networks block direct connections: then a <b>TURN</b> server relays the media (slower, costs bandwidth)'], ['Runs on', 'UDP: a late video frame is useless, so it is dropped rather than resent'], ['Used for', 'Google Meet, Zoom in the browser, WhatsApp and Discord calls, in-app "call your rider", screen sharing, peer-to-peer file transfer']]);
+}
+async function run6(ctx) {
+  say('You want to <b>video call</b> your rider. Video is heavy: sending it through the company\'s servers would be slow and costly.');
+  await Net.beat(ctx, 2000);
+  await send('app', 'sig', 'offer: video + audio', '', 700);
+  Net.check(ctx);
+  Net.set('sig', { body: tw([['forwarding the offer', 'amb']]) });
+  await send('sig', 'rid', 'offer', '', 700);
+  Net.check(ctx);
+  await send('rid', 'sig', 'answer: accepted', 'ok', 700);
+  Net.check(ctx);
+  await send('sig', 'app', 'answer', 'ok', 700);
+  Net.check(ctx);
+  Net.set('sig', { body: tw([['introduction done', 'ok']]) });
+  say('Step 1, <b>signaling</b>: the two phones agree on the call, through the server.');
+  await Net.beat(ctx, 1800);
+  await both([send('app', 'stun', 'my address?', '', 600), send('rid', 'stun', 'my address?', '', 600)]);
+  Net.check(ctx);
+  await both([send('stun', 'app', '49.36.x.x:5000', 'ok', 600), send('stun', 'rid', '106.2.x.x:6100', 'ok', 600)]);
+  Net.check(ctx);
+  Net.set('app', { body: tw([['I am 49.36.x.x:5000', 'ok']]) });
+  Net.set('rid', { body: tw([['I am 106.2.x.x:6100', 'ok']]) });
+  say('Step 2, <b>STUN</b>: each phone learns its public address, so the other can reach it.');
+  await Net.beat(ctx, 1800);
+  Net.link('app', 'rid', { cls: 'on' });
+  say('Step 3: the phones connect <b>directly</b>. The servers are out of the picture.');
+  for (let i = 0; i < 3; i++) {
+    await both([send('app', 'rid', '🎥 video', 'ok', 600), send('rid', 'app', '🎥 video', 'ok', 600)]);
+    Net.check(ctx);
+  }
+  Net.set('app', { body: tw([['in call with rider 🎥', 'ok']]) });
+  Net.set('rid', { body: tw([['in call with customer 🎥', 'ok']]) });
+  say('Audio and video flow <b>phone ⇄ phone</b>. If a network blocks that, a <b>TURN</b> server relays it instead.', 'win');
+}
+
+// ================= 7: which one when =================
+const SHEET = [
+  ['Short polling', 'client asks every N s', '→ (asks) / ← (answers)', 'up to N s', 'dashboard refresh, job status'],
+  ['Long polling', 'client asks, server holds', '← (one reply per ask)', 'instant', 'notifications, fallback for chat'],
+  ['SSE', '1 HTTP request, kept open', '← server → client only', 'instant', 'live scores, order status, AI answers typing out'],
+  ['WebSocket', 'HTTP upgrade → open pipe', '⇄ both ways', 'instant', 'chat, live tracking, games, collaborative docs'],
+  ['WebRTC', 'signaling, then direct', '⇄ user ⇄ user', 'lowest', 'video/voice calls, screen share, P2P files']
+];
+const sheetHTML = n => '<table class="sheet"><tr><th></th><th>connection</th><th>direction</th><th>delay</th><th>used for</th></tr>' + SHEET.map((r, i) => `<tr class="${i < n ? '' : 'hide'}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</table>';
+function setup7() {
+  Net.node('board', { x: 500, y: 290, label: 'Which one when', kind: 'proxy', w: 940, body: sheetHTML(0) });
+  panel([['Ask in order', '1. Is a few seconds of delay fine? → <b>short polling</b><br>2. Only server → client? → <b>SSE</b><br>3. Both ways, real-time? → <b>WebSocket</b><br>4. Audio or video between users? → <b>WebRTC</b>'], ['See it live', 'DevTools → Network: filter <b>WS</b> on WhatsApp Web to watch WebSocket messages; open ChatGPT or Claude and watch an <code>event-stream</code> (SSE) response arrive word by word']]);
+}
+async function run7(ctx) {
+  say('The five side by side.');
+  for (let i = 1; i <= SHEET.length; i++) { await wait(ctx, 800); Net.set('board', { body: sheetHTML(i) }); }
+  say('Pick the <b>simplest</b> one that meets the delay and direction you need.', 'win');
+}
+
+// ---------- question before each step, answer after ----------
+const QA = [
+  { q: 'The server knows the rider moved. Why does the customer\'s screen still show the old distance?', a: ['In HTTP the client asks and the server answers. The server cannot start a conversation.', 'So we need a technique for server → client updates.'] },
+  { q: 'The app asks "any update?" every 2 seconds. What is wasteful about that?', a: ['Most answers are "no": wasted requests on both sides.', 'News still waits up to 2 s for the next ask.', 'At scale: 1M users × every 2 s = 500,000 requests a second.'] },
+  { q: 'What if the server simply didn\'t answer until it had news?', a: ['That is long polling: the request is held open, and answered the moment news arrives.', 'No empty answers and almost no delay; the app re-asks right after each answer.'] },
+  { q: 'Can one request receive many updates?', a: ['Yes, with SSE: the server keeps the response open and writes events into it.', 'It only works server → client; sending back needs a normal request.'] },
+  { q: 'Chat needs messages in both directions, instantly. What fits?', a: ['WebSocket: an HTTP request upgraded (101) into a two-way pipe that stays open.', 'Tiny messages both ways; wss:// is the encrypted version.'] },
+  { q: 'Why shouldn\'t video calls go through the company\'s servers?', a: ['Video is heavy and needs the lowest delay.', 'WebRTC: the server only introduces the phones (signaling, STUN), then media flows directly. TURN relays only when direct is blocked.'] },
+  { q: 'How do you pick between them?', a: ['Delay okay → polling. Server → client only → SSE. Both ways → WebSocket. Audio/video between users → WebRTC.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  $('#ansList').innerHTML = QA[i].a.map(t => `<li>${t}</li>`).join('');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const U = t => `<b>Use case:</b> ${t}`;
+Net.scenarios([
+  { label: '1 The problem', story: U('You ordered dosa and want to see where the rider is.'), setup: setup1, run: run1 },
+  { label: '2 Short polling', story: U('The app keeps asking for the rider\'s location.'), setup: setup2, run: run2 },
+  { label: '3 Long polling', story: U('The app asks once, and the server waits for news.'), setup: setup3, run: run3 },
+  { label: '4 SSE', story: U('The server streams order updates to the app.'), setup: setup4, run: run4 },
+  { label: '5 WebSocket', story: U('Live tracking plus chatting with the rider.'), setup: setup5, run: run5 },
+  { label: '6 WebRTC', story: U('You video call the rider.'), setup: setup6, run: run6 },
+  { label: '7 Which one when', story: U('Choosing for a new feature.'), setup: setup7, run: run7 }
+], '');
+</script>
+<script>
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>

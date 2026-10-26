@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP Versions and HTTPS</title>
+<link rel="stylesheet" href="net.css">
+<link rel="stylesheet" href="redis.css">
+<link rel="stylesheet" id="themeCss" href="mono.css">
+<link rel="stylesheet" href="comm.css">
+<script>try { if (localStorage.getItem('redisTheme') === 'neon') document.getElementById('themeCss').href = 'fancy.css'; } catch (e) {}</script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>HTTP/1.1, HTTP/2, HTTP/3 and HTTPS</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="pages"><a class="on" href="http-versions.html">HTTP versions + HTTPS</a><a href="server-to-client.html">Server → client</a></nav>
+      <button id="bTheme" type="button"></button>
+    </div>
+  </header>
+  <div class="box">
+    <div class="row"><div class="row-t">Step</div><div class="row-c" id="scen"></div></div>
+    <div class="story" id="story"></div>
+    <div id="msg"><div id="msgText"></div><div class="ctl"><button id="bPause"></button><button id="bStep" disabled>Next step &#8594;</button></div></div>
+    <div id="stage"></div>
+    <div class="two" id="final"><div><div class="qt">In this step</div><div id="code"></div></div></div>
+    <div class="answer" id="answer">
+      <div class="ans-h"><span>The answer</span><button id="bAns">Show answer</button></div>
+      <ul id="ansList"></ul>
+    </div>
+    <div class="footer">
+      <label>Speed <input id="speed" type="range" min="0.4" max="3" step="0.1" value="1" autocomplete="off"></label>
+      <span class="hint">Space = start / pause, &#8594; = next step</span>
+      <span class="sp"></span>
+      <button id="bRestart">Restart</button>
+    </div>
+  </div>
+</div>
+
+<script src="net-core.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+Net.mount(580, 1.1);
+const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say = (html, kind) => Net.say(html, kind);
+const send = (a, b, label, cls, dur) => Net.send(a, b, { label, cls: cls || '', dur: dur || 800 });
+const wait = (ctx, ms) => Net.wait(ctx, ms);
+const both = l => Promise.all(l);
+const tw = lines => '<div class="tw">' + lines.map(l => `<div class="${l[1] || ''}">${esc(l[0])}</div>`).join('') + '</div>';
+const kv = (k, v, cls) => `<div class="kv ${cls || ''}"><span>${k}</span><b>${v}</b></div>`;
+
+// the panel under the stage: [label, text]; the "used for" row is highlighted
+function panel(rows) {
+  $('#code').innerHTML = '<table class="ct">' + rows.map(r => `<tr class="${r[0] === 'Used for' ? 'use' : ''}"><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('') + '</table>';
+  $('#final').classList.remove('hidden');
+}
+
+// ---------- the menu page: 12 files the browser must download ----------
+// size = units of data. One connection moves 1 unit per tick.
+const FILES = [['index.html', 1], ['style.css', 1], ['app.js', 1], ['hero.jpg', 6], ['dosa.jpg', 2], ['idli.jpg', 2], ['vada.jpg', 2], ['thali.jpg', 2], ['lassi.jpg', 2], ['biryani.jpg', 2], ['paneer.jpg', 2], ['naan.jpg', 2]];
+let F, T, DONE_AT;
+function resetFiles() { F = FILES.map(f => ({ n: f[0], size: f[1], got: 0, st: '', t: '' })); T = 0; DONE_AT = null; }
+function filesHTML(note) {
+  return `<div class="clock">time: ${T}${DONE_AT !== null ? ' <span>· page ready at ' + DONE_AT + '</span>' : ''}</div>`
+    + F.map(f => `<div class="fr ${f.st}"><span>${f.n}</span><span class="bar"><i style="width:${Math.min(100, f.got * 100 / f.size)}%"></i></span><span class="t">${f.t}</span></div>`).join('')
+    + (note ? `<div class="cap" style="margin-top:4px">${note}</div>` : '');
+}
+const paintFiles = note => Net.set('br', { body: filesHTML(note) });
+function finish(f) { f.st = 'done'; f.t = 't' + T; }
+const allDone = () => F.every(f => f.st === 'done');
+
+// ================= 1: HTTP basics =================
+function setup1() {
+  Net.node('br', { x: 190, y: 290, label: 'Browser', sub: 'Swiggy app', kind: 'client', w: 330, body: tw([['ready', 'dim']]) });
+  Net.node('sv', { x: 820, y: 290, label: 'Server', sub: 'swiggy.com', kind: 'db', w: 280, body: tw([['waiting for requests', 'dim']]) });
+  Net.link('br', 'sv');
+  panel([['Example', '<code>GET /menu HTTP/1.1</code> → <code>HTTP/1.1 200 OK</code> + the menu'], ['Rule', 'The client always asks first. The server only ever answers'], ['Used for', 'Every web page and every REST API, including all our Spring Boot APIs (Postman → order-service)']]);
+}
+async function run1(ctx) {
+  say('You open the Swiggy menu. The browser sends a <b>request</b>.');
+  Net.set('br', { body: tw([['GET /menu HTTP/1.1', 'h'], ['Host: swiggy.com', 'dim']]) });
+  await send('br', 'sv', 'GET /menu');
+  Net.check(ctx);
+  Net.set('sv', { body: tw([['finds the menu…', 'dim']]) });
+  await Net.beat(ctx, 1400);
+  Net.set('sv', { body: tw([['HTTP/1.1 200 OK', 'ok'], ['{ "dosa": 120, "idli": 80 … }', 'dim']]) });
+  await send('sv', 'br', '200 OK', 'ok');
+  Net.check(ctx);
+  Net.set('br', { body: tw([['GET /menu HTTP/1.1', 'h'], ['HTTP/1.1 200 OK', 'ok'], ['menu shown ✓', 'ok']]) });
+  say('One <b>request</b>, one <b>response</b>, done. That is HTTP.');
+  await Net.beat(ctx, 2200);
+  Net.set('sv', { body: tw([['HTTP/1.1 200 OK', 'ok'], ['(rider just picked up your food!)', 'amb']]) });
+  say('Later the server has news. Can it tell the browser? <b>No</b>: in HTTP the server only answers, it never speaks first. (Page 2 is about fixing this.)', 'err');
+  await Net.beat(ctx, 2600);
+  say('Today: how the same request–response gets <b>faster</b> (HTTP/1.1 → 2 → 3) and <b>safe</b> (HTTPS).', 'win');
+}
+
+// ================= 2: HTTP/1.1 =================
+function setup2() {
+  resetFiles();
+  Net.node('br', { x: 175, y: 290, label: 'Browser', sub: 'loading the menu page: 12 files', kind: 'client', w: 300, body: filesHTML() });
+  Net.node('sv', { x: 870, y: 290, label: 'Server', kind: 'db', w: 180, body: kv('version', 'HTTP/1.1') });
+  for (let i = 0; i < 6; i++) {
+    Net.node('c' + i, { x: 545, y: 75 + i * 86, label: 'connection ' + (i + 1), kind: 'proxy', w: 170, body: `<div class="cap">idle</div>` });
+    Net.link('br', 'c' + i); Net.link('c' + i, 'sv');
+  }
+  panel([['The rule', 'One connection carries <b>one file at a time</b>. Browsers open at most <b>6 connections</b> per website'], ['Problem 1', 'Only 6 files move at once: the rest queue up (the "staircase" in DevTools)'], ['Problem 2', 'Every connection needs its own setup (TCP + TLS handshake)'], ['In DevTools', 'Protocol column shows <code>http/1.1</code>'], ['Used for', 'Older websites, and traffic inside data centres: load balancer → your Spring Boot apps (Tomcat speaks HTTP/1.1)']]);
+}
+const conn = (i, text, cls) => Net.set('c' + i, { body: `<div class="cap" style="color:${cls === 'busy' ? '#fff' : ''}">${text}</div>` });
+async function run2(ctx) {
+  say('The menu page needs <b>12 files</b>: HTML, CSS, JS and 9 photos (hero.jpg is big).');
+  await Net.beat(ctx, 2000);
+  say('HTTP/1.1: one file per connection at a time, so the browser opens <b>6 connections</b>. Each needs a handshake first.');
+  for (let i = 0; i < 6; i++) conn(i, 'handshake…', 'busy');
+  await wait(ctx, 900);
+  T = 1; paintFiles();
+  const lane = [null, null, null, null, null, null];
+  let next = 0;
+  while (!allDone()) {
+    Net.check(ctx);
+    for (let i = 0; i < 6; i++) {
+      if (lane[i] === null && next < F.length) { lane[i] = F[next++]; lane[i].st = 'load'; lane[i].ask = true; }
+      if (lane[i] && lane[i].ask) { conn(i, 'GET ' + lane[i].n, 'busy'); send('c' + i, 'sv', '', '', 500); }
+      else if (lane[i]) { conn(i, lane[i].n, 'busy'); send('sv', 'c' + i, '', 'ok', 500); } else conn(i, 'idle');
+    }
+    const waiting = F.filter(f => f.st === '').length;
+    paintFiles(waiting ? waiting + ' files waiting for a free connection' : '');
+    await wait(ctx, 700);
+    T++;
+    for (let i = 0; i < 6; i++) {
+      const f = lane[i];
+      if (!f) continue;
+      if (f.ask) { f.ask = false; continue; }   // this tick was spent asking for the file
+      f.got++;
+      if (f.got >= f.size) { finish(f); lane[i] = null; }
+    }
+    paintFiles();
+    if (T === 3) say('Only 6 files move at once, and every new file costs a round trip to <b>ask</b> for it. The other photos <b>wait in a queue</b>.');
+  }
+  DONE_AT = T; paintFiles();
+  for (let i = 0; i < 6; i++) conn(i, 'idle');
+  say(`Page ready at <b>time ${T}</b>. 6 handshakes, a request round trip per file, and only 6 files at a time.`, 'win');
+}
+
+// ================= 3: HTTP/2 =================
+let STALL = null;   // { from, to, who } -> during these ticks the listed files are frozen
+async function streamSim(ctx, label, onTick) {
+  T = 1; paintFiles('asking for all 12 files at once');
+  await send('cx', 'sv', 'GET ×12', '', 600);
+  Net.check(ctx);
+  T = 2;
+  while (!allDone()) {
+    Net.check(ctx);
+    if (onTick) await onTick(T);
+    const frozen = f => STALL && T >= STALL.from && T < STALL.to && (STALL.who === 'all' || STALL.who === f.n);
+    const active = F.filter(f => f.st !== 'done');
+    const moving = active.filter(f => !frozen(f));
+    active.forEach(f => { f.st = frozen(f) ? 'stall' : 'load'; });
+    paintFiles(moving.length ? '' : 'everything is waiting for one lost packet');
+    if (moving.length) {
+      for (let k = 0; k < 3; k++) send('sv', 'cx', moving[k % moving.length].n.split('.')[0], 'ok', 450);
+    }
+    await wait(ctx, 700);
+    T++;
+    const share = 6 / Math.max(1, moving.length);   // the same bandwidth as 6 HTTP/1.1 connections, shared
+    moving.forEach(f => { f.got += share; if (f.got >= f.size - 1e-9) finish(f); });
+    paintFiles();
+  }
+  DONE_AT = T; paintFiles();
+}
+function streamStage(sub, label, connBody) {
+  resetFiles(); STALL = null;
+  Net.node('br', { x: 175, y: 290, label: 'Browser', sub: 'loading the menu page: 12 files', kind: 'client', w: 300, body: filesHTML() });
+  Net.node('cx', { x: 545, y: 290, label, sub, kind: 'proxy', w: 220, body: connBody });
+  Net.node('sv', { x: 870, y: 290, label: 'Server', kind: 'db', w: 180, body: kv('version', label.split(' ')[0]) });
+  Net.link('br', 'cx'); Net.link('cx', 'sv');
+}
+function setup3() {
+  streamStage('1 TCP connection', 'HTTP/2 connection', kv('streams', '12 at once') + kv('handshakes', '1'));
+  panel([['The idea', '<b>One</b> connection. Every file is cut into small frames, and frames of all 12 files are mixed together (multiplexing)'], ['Fixed', 'No 6-file limit, no queue, one handshake. A big photo no longer holds up the small files'], ['Still broken', 'It runs on <b>TCP</b>, which delivers bytes strictly in order. One lost packet → TCP waits for the resend → <b>all 12 files freeze</b>'], ['In DevTools', 'Protocol column shows <code>h2</code>'], ['Used for', 'Most websites today; gRPC between microservices']]);
+}
+async function run3(ctx) {
+  say('HTTP/2: <b>one</b> connection. All 12 files are requested at once and their pieces travel <b>mixed together</b>.');
+  await Net.beat(ctx, 1800);
+  await streamSim(ctx);
+  say(`Page ready at <b>time ${T}</b> (HTTP/1.1 needed 9). One handshake, all 12 requests in one go, no queue.`, 'win');
+  await Net.beat(ctx, 2600);
+  say('But what if <b>one packet gets lost</b> on a bad network?');
+  resetFiles(); paintFiles();
+  STALL = { from: 3, to: 5, who: 'all' };
+  await Net.beat(ctx, 1200);
+  await streamSim(ctx, null, async t => {
+    if (t === 3) { Net.set('cx', { body: kv('streams', '12 at once') + kv('packet lost', 'all frozen', 'bad') }); Net.flash('cx', 'bad'); say('One packet lost. TCP must deliver bytes <b>in order</b>, so it holds back <b>everything</b> until the resend arrives.', 'err'); }
+    if (t === 5) Net.set('cx', { body: kv('streams', '12 at once') + kv('resend arrived', 'moving again', 'good') });
+  });
+  say(`Ready at <b>time ${T}</b>. One lost packet froze all 12 files: TCP <b>head-of-line blocking</b>.`, 'err');
+}
+
+// ================= 4: HTTP/3 =================
+function setup4() {
+  streamStage('1 QUIC connection, on UDP', 'HTTP/3 connection', kv('streams', '12, independent') + kv('setup', '1 round trip'));
+  panel([['The idea', 'HTTP/3 runs on <b>QUIC</b>, built on <b>UDP</b> instead of TCP. Each file is its own independent stream'], ['Lost packet', 'Only the file that lost it waits; the other files keep moving'], ['Faster start', 'Connection + encryption set up in <b>1 round trip</b> (TCP + TLS take 2–3); a returning visitor can send data immediately'], ['Network switch', 'Phone moves from Wi-Fi to 4G: the QUIC connection survives (it has an ID, not an IP address). A TCP connection would break and start over'], ['In DevTools', 'Protocol column shows <code>h3</code>'], ['Used for', 'Google, YouTube, Facebook, Instagram, Cloudflare-hosted sites: big, mobile-heavy apps']]);
+}
+async function run4(ctx) {
+  say('HTTP/3: still one connection and mixed pieces, but on <b>QUIC (UDP)</b>. Each file is an <b>independent</b> stream.');
+  await Net.beat(ctx, 1800);
+  STALL = { from: 3, to: 5, who: 'hero.jpg' };
+  await streamSim(ctx, null, async t => {
+    if (t === 3) { Net.set('cx', { body: kv('streams', '12, independent') + kv('lost packet', 'hero.jpg only', 'bad') }); Net.flash('cx', 'bad'); say('The same lost packet, in <b>hero.jpg</b>. Only hero.jpg waits; the other 11 files keep going.', 'err'); }
+    if (t === 5) Net.set('cx', { body: kv('streams', '12, independent') + kv('resend arrived', 'hero.jpg moving', 'good') });
+  });
+  say(`Ready at <b>time ${T}</b>. One bad packet slows one file, not the whole page.`, 'win');
+  await Net.beat(ctx, 2600);
+  say('Bonus: you walk out of the house and your phone switches from <b>Wi-Fi to 4G</b>.');
+  Net.set('br', { sub: 'Wi-Fi → 4G (new IP address)' });
+  Net.flash('br', 'ok');
+  await Net.beat(ctx, 1600);
+  Net.set('cx', { body: kv('connection ID', 'unchanged', 'good') + kv('download', 'continues', 'good') });
+  say('QUIC identifies the connection by an <b>ID</b>, not your IP, so it just continues. TCP (HTTP/1.1, HTTP/2) would drop and reconnect.', 'win');
+}
+
+// ================= 5: HTTPS =================
+function setup5() {
+  Net.node('br', { x: 160, y: 330, label: 'Browser', sub: 'http://swiggy.com', kind: 'client', w: 260, body: tw([['login form', 'dim']]) });
+  Net.node('ev', { x: 505, y: 105, label: 'Someone on the café Wi-Fi', sub: 'can see every packet', kind: 'proxy', w: 300, body: tw([['watching…', 'dim']]) });
+  Net.node('sv', { x: 850, y: 330, label: 'Server', sub: 'swiggy.com', kind: 'db', w: 240, body: tw([['', 'dim']]) });
+  Net.link('br', 'sv'); Net.link('br', 'ev', { dashed: true });
+  panel([['HTTP', 'Text travels as-is. Anyone on the path (café Wi-Fi, a hacked router) can read and even change it'], ['HTTPS = HTTP + TLS', '1. Browser says hello. 2. Server sends a <b>certificate</b> ("I am swiggy.com", signed by a trusted authority). 3. Browser checks it. 4. Both agree on a secret key. 5. Everything after is encrypted'], ['What it gives', 'Privacy (nobody can read it), integrity (nobody can change it), identity (it really is swiggy.com)'], ['In the browser', 'Padlock in the address bar; <code>http://</code> sites are marked "Not secure"'], ['Used for', 'Every public website and API today, and always for logins and payments. HTTP/2 in browsers and HTTP/3 always need it']]);
+}
+async function run5(ctx) {
+  say('Plain <b>http://</b>. You log in on café Wi-Fi.');
+  Net.set('br', { body: tw([['POST /login', 'h'], ['user=aman&password=abc123', '']]) });
+  await both([send('br', 'sv', 'password=abc123'), send('br', 'ev', 'copy', 'bad')]);
+  Net.check(ctx);
+  Net.set('ev', { body: tw([['user=aman', 'bad'], ['password=abc123', 'bad']]) });
+  Net.flash('ev', 'bad');
+  say('The person on the same Wi-Fi reads your <b>password</b>. They could even change the request.', 'err');
+  await Net.beat(ctx, 2800);
+  Net.set('br', { sub: 'https://swiggy.com 🔒', body: tw([['setting up TLS…', 'dim']]) });
+  Net.set('ev', { body: tw([['watching…', 'dim']]) });
+  Net.set('sv', { body: tw([['', 'dim']]) });
+  say('Now <b>https://</b>. Before any data, a short <b>TLS handshake</b>.');
+  await send('br', 'sv', 'hello (TLS 1.3)');
+  Net.check(ctx);
+  await send('sv', 'br', 'certificate: swiggy.com', 'ok');
+  Net.check(ctx);
+  Net.set('br', { body: tw([['certificate for swiggy.com', 'h'], ['signed by a trusted authority ✓', 'ok']]) });
+  say('The server proves who it is with a <b>certificate</b>. The browser checks it, so a fake swiggy.com would be caught.');
+  await Net.beat(ctx, 2400);
+  await both([send('br', 'sv', 'key share'), send('sv', 'br', 'key share', 'ok')]);
+  Net.check(ctx);
+  Net.set('br', { body: tw([['secret key agreed 🔑', 'ok']]) });
+  Net.set('sv', { body: tw([['secret key agreed 🔑', 'ok']]) });
+  say('Both sides now share a <b>secret key</b> that never travelled over the network.');
+  await Net.beat(ctx, 2200);
+  Net.set('br', { body: tw([['POST /login', 'h'], ['password=abc123', ''], ['→ sent encrypted', 'ok']]) });
+  await both([send('br', 'sv', '9f$kQ2…x@', 'ok'), send('br', 'ev', 'copy', 'bad')]);
+  Net.check(ctx);
+  Net.set('ev', { body: tw([['9f$kQ2#Lp0v…x@Zr', 'dim'], ['(unreadable)', 'dim']]) });
+  Net.set('sv', { body: tw([['decrypted with the key:', 'dim'], ['password=abc123 ✓', 'ok']]) });
+  say('The Wi-Fi snoop sees only <b>gibberish</b>; the server decrypts it. That is the 🔒.', 'win');
+}
+
+// ================= 6: summary + DevTools =================
+const SHEET = [
+  ['HTTP/1.1', 'TCP', '1 file per connection, max 6 connections', 'blocks that connection', 'http/1.1', 'older sites, inside data centres'],
+  ['HTTP/2', 'TCP', 'all files on 1 connection, mixed', 'blocks <b>everything</b> (TCP waits)', 'h2', 'most websites, gRPC'],
+  ['HTTP/3', 'QUIC on UDP', 'all files on 1 connection, independent', 'blocks only that file', 'h3', 'Google, YouTube, Facebook, Cloudflare'],
+  ['HTTPS', 'TLS on top', '(adds encryption + identity)', '', '🔒', 'every public site; required for h2 in browsers and for h3']
+];
+const sheetHTML = n => '<table class="sheet"><tr><th></th><th>runs on</th><th>files in parallel</th><th>one lost packet</th><th>devtools</th><th>used by</th></tr>' + SHEET.map((r, i) => `<tr class="${i < n ? '' : 'hide'}">${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</table>';
+function setup6() {
+  Net.node('board', { x: 500, y: 290, label: 'HTTP versions at a glance', kind: 'proxy', w: 940, body: sheetHTML(0) });
+  panel([['Try it now', '1. Open Chrome → <b>View → Developer → Developer Tools</b> → <b>Network</b> tab<br>2. Right-click any column header → tick <b>Protocol</b><br>3. Open <code>google.com</code> or <code>youtube.com</code> and reload: look for <code>h3</code> and <code>h2</code><br>4. Try an older site (for example a government site) for <code>http/1.1</code>'], ['Our Spring Boot apps', '<code>http/1.1</code>, no TLS: Postman → order-service on <code>http://localhost:9030</code>']]);
+}
+async function run6(ctx) {
+  say('All four in one table.');
+  for (let i = 1; i <= SHEET.length; i++) { await wait(ctx, 800); Net.set('board', { body: sheetHTML(i) }); }
+  say('Same requests and responses every time. Only <b>how they travel</b> changes.', 'win');
+}
+
+// ---------- question before each step, answer after ----------
+const QA = [
+  { q: 'The server learns that your rider has picked up the food. Can it tell your browser right away over plain HTTP?', a: ['No. In HTTP the client always asks first; the server only answers.', 'Page 2 shows the workarounds: polling, SSE, WebSocket.'] },
+  { q: 'A page has 12 files. With HTTP/1.1, how many can download at the same time?', a: ['At most 6: one file per connection, and browsers open about 6 connections per site.', 'The rest queue up, and each connection needs its own handshake.'] },
+  { q: 'HTTP/2 uses one connection for all files. What happens if one packet is lost?', a: ['TCP delivers bytes strictly in order, so it holds back everything until the resend arrives.', 'All files freeze: TCP head-of-line blocking.'] },
+  { q: 'How does HTTP/3 avoid that freeze?', a: ['It runs on QUIC over UDP, where each file is an independent stream.', 'A lost packet only delays its own file.', 'Bonus: faster setup, and it survives switching from Wi-Fi to 4G.'] },
+  { q: 'You log in on café Wi-Fi over http://. Who can read your password?', a: ['Anyone on the path. Plain HTTP is readable text.', 'HTTPS adds TLS: a certificate proves the server, and a shared secret key encrypts everything after.'] },
+  { q: 'Which HTTP version do our Spring Boot APIs use?', a: ['HTTP/1.1 without TLS (http://localhost).', 'In production, the browser usually talks HTTP/2 or 3 over HTTPS to a load balancer, which talks HTTP/1.1 to the apps.'] }
+];
+let ansOpen = false;
+function paintAnswer(i, open) {
+  ansOpen = open;
+  $('#ansList').innerHTML = QA[i].a.map(t => `<li>${t}</li>`).join('');
+  $('#ansList').classList.toggle('hidden', !open);
+  $('#bAns').textContent = open ? 'Hide answer' : 'Show answer';
+}
+document.addEventListener('net:step', e => {
+  const i = e.detail.i;
+  if (e.detail.state === 'select') $('#story').innerHTML += `<span class="q"><b>Think first:</b> ${QA[i].q}</span>`;
+  paintAnswer(i, e.detail.state === 'done');
+});
+$('#bAns').onclick = () => { const b = document.querySelector('[data-s].on'); paintAnswer(b ? +b.dataset.s : 0, !ansOpen); };
+
+const U = t => `<b>Use case:</b> ${t}`;
+Net.scenarios([
+  { label: '1 HTTP basics', story: U('You open the Swiggy menu.'), setup: setup1, run: run1 },
+  { label: '2 HTTP/1.1', story: U('The menu page needs 12 files: HTML, CSS, JS and 9 food photos.'), setup: setup2, run: run2 },
+  { label: '3 HTTP/2', story: U('The same 12 files, over one HTTP/2 connection.'), setup: setup3, run: run3 },
+  { label: '4 HTTP/3 (QUIC)', story: U('The same 12 files on a shaky mobile network.'), setup: setup4, run: run4 },
+  { label: '5 HTTPS', story: U('You log in to Swiggy on café Wi-Fi.'), setup: setup5, run: run5 },
+  { label: '6 Summary + DevTools', story: U('See all of it on real websites.'), setup: setup6, run: run6 }
+], '');
+</script>
+<script>
+(function () {
+  const link = document.getElementById('themeCss'), b = document.getElementById('bTheme');
+  const paint = () => { b.textContent = link.getAttribute('href') === 'mono.css' ? 'theme: mono' : 'theme: neon'; };
+  b.onclick = () => {
+    const next = link.getAttribute('href') === 'mono.css' ? 'fancy.css' : 'mono.css';
+    link.setAttribute('href', next);
+    try { localStorage.setItem('redisTheme', next === 'mono.css' ? 'mono' : 'neon'); } catch (e) {}
+    paint();
+  };
+  paint();
+})();
+</script>
+</body>
+</html>
