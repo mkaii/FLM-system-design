@@ -39,7 +39,39 @@ async function run6(ctx) {
   say('One server can hold a lot, but not <b>billions</b>. Many servers is the next class; today, one.', 'win');
 }
 
-// ================= shared scene for steps 7-9 =================
+// ================= 7: a live chat room needs no database =================
+function setup7live() {
+  Net.node('a', { x: 130, y: 150, label: 'Aman', sub: 'in the room', kind: 'client', w: 200, body: tw([['connected', 'ok']]) });
+  Net.node('r', { x: 130, y: 420, label: 'Riya', sub: 'in the room', kind: 'client', w: 200, body: tw([['connected', 'ok']]) });
+  Net.node('cs', { x: 500, y: 290, label: 'Chat server', sub: 'room: IPL final live chat', kind: 'proxy', w: 260, body: tw([['in the room: aman, riya', 'h'], ['no database', 'dim']]) });
+  Net.node('sa', { x: 870, y: 290, label: 'Sara', sub: 'not here yet', kind: 'client', w: 200, state: 'down', badge: 'not connected', badgeCls: 'bad', body: tw([['…', 'dim']]) });
+  Net.link('a', 'cs', { cls: 'on' }); Net.link('r', 'cs', { cls: 'on' }); Net.link('cs', 'sa', { dashed: true });
+  panel([['Live chat room', 'The server just <b>relays</b>: a message comes in, it goes out to whoever is connected right now. No database at all (like our class 71 WebSocket demo)'], ['What you lose', 'Anyone not connected at that moment misses it; joining late or refreshing shows no history; a server crash loses messages in flight'], ['Fine for', 'Live stream and match comments, game lobby chat, "typing…" signals'], ['WhatsApp', 'Must reach people who are offline and never lose a message → it <b>saves first</b> (next step)']]);
+}
+async function run7live(ctx) {
+  say('A <b>live chat room</b> for the IPL final. Aman and Riya are in; Sara isn\'t yet.');
+  await Net.beat(ctx, 2000);
+  Net.set('a', { body: bubble('GOAL!! what a six 🔥', '', false) });
+  await send('a', 'cs', '"what a six"', '', 650);
+  Net.check(ctx);
+  say('The server doesn\'t save anything. It just passes the message to <b>everyone connected right now</b>.');
+  await both([send('cs', 'r', '"what a six"', 'ok', 650), lose('cs', 'sa', 'Sara')]);
+  Net.check(ctx);
+  Net.set('r', { body: bubble('GOAL!! what a six 🔥', '', false, true) });
+  say('Riya gets it instantly. Sara wasn\'t connected, so for her it\'s simply <b>gone</b>.', 'err');
+  await Net.beat(ctx, 2600);
+  say('Two minutes later, Sara joins.');
+  Net.set('sa', { state: '', badge: '', sub: 'just joined', body: tw([['(empty: no history)', 'dim']]) });
+  await send('sa', 'cs', 'join', '', 600);
+  Net.check(ctx);
+  Net.linkSet('cs', 'sa', { dashed: false, cls: 'on' });
+  Net.set('cs', { body: tw([['in the room: aman, riya, sara', 'h'], ['no database', 'dim']]) });
+  say('Sara sees <b>nothing</b> from before: there\'s nowhere to fetch it from. For live match chat, that\'s fine.');
+  await Net.beat(ctx, 2600);
+  say('WhatsApp can\'t work like this: Riya\'s tablet may be off for hours. So WhatsApp <b>saves every message first</b>.', 'win');
+}
+
+// ================= shared scene for steps 8-10 =================
 let INB, MSGS;
 const paintDb = () => Net.set('db', { body: table('Message: id · chat · sender · text', MSGS) + '<div style="height:6px"></div>' + table('Inbox: clientId · messageId · expiresAt', INB) });
 function scene(o) {
@@ -242,8 +274,9 @@ async function run10(ctx) {
 
 startPage([
   { label: '6 One chat server', story: 'Three devices connect to the chat server.', setup: setup6, run: run6, q: 'How does the server know which connection belongs to Riya\'s tablet, and how many connections can it hold?', a: ['An in-memory map: clientId → WebSocket, one entry per device.', 'Memory decides: 16 GB ÷ ~30 KB ≈ 530,000 connections (WhatsApp: 1–2M on big servers).'] },
-  { label: '7 Send a message', story: 'Aman sends "hi"; Riya is online.', setup: setup7, run: run7, q: 'The message is saved in the database. What picks it up and sends it to Riya?', a: ['Nothing watches the database.', 'The chat server, while handling Aman\'s message: save, look Riya up in the map, push.', 'Riya acks → her inbox row is deleted.'] },
-  { label: '8 Offline device', story: 'Riya\'s phone is on, her tablet is off.', setup: setup8, run: run8, q: 'The phone gets the message now. How does the tablet get it later?', a: ['Each device has its own inbox row; the tablet\'s waits.', 'When the tablet connects, the server reads its inbox and sends what\'s waiting.', 'A 30-day TTL clears rows that are never delivered.'] },
-  { label: '9 Ticks', story: 'Aman watches his ticks change.', setup: setup9, run: run9, q: 'Who sends each tick: ✓, ✓✓, blue ✓✓?', a: ['✓: the server, after saving.', '✓✓: Riya\'s device acks, and the server tells Aman.', 'Blue: Riya opens the chat, her app sends "read".'] },
-  { label: '10 Big picture', story: 'Everything on one diagram.', setup: setup10, run: run10, q: 'What breaks when one chat server isn\'t enough?', a: ['Aman and Riya may be connected to different servers.', 'Aman\'s server has no connection to Riya. Finding her is next class (Redis Pub/Sub).'] }
+  { label: '7 Live room (no DB)', story: 'A live chat room during the IPL final.', setup: setup7live, run: run7live, q: 'In a live chat room, do we even need a database?', a: ['No: the server just relays each message to whoever is connected right now.', 'The cost: anyone not connected misses it, and late joiners see no history.', 'WhatsApp must reach offline devices, so it saves first.'] },
+  { label: '8 Send a message', story: 'Aman sends "hi"; Riya is online.', setup: setup7, run: run7, q: 'The message is saved in the database. What picks it up and sends it to Riya?', a: ['Nothing watches the database.', 'The chat server, while handling Aman\'s message: save, look Riya up in the map, push.', 'Riya acks → her inbox row is deleted.'] },
+  { label: '9 Offline device', story: 'Riya\'s phone is on, her tablet is off.', setup: setup8, run: run8, q: 'The phone gets the message now. How does the tablet get it later?', a: ['Each device has its own inbox row; the tablet\'s waits.', 'When the tablet connects, the server reads its inbox and sends what\'s waiting.', 'A 30-day TTL clears rows that are never delivered.'] },
+  { label: '10 Ticks', story: 'Aman watches his ticks change.', setup: setup9, run: run9, q: 'Who sends each tick: ✓, ✓✓, blue ✓✓?', a: ['✓: the server, after saving.', '✓✓: Riya\'s device acks, and the server tells Aman.', 'Blue: Riya opens the chat, her app sends "read".'] },
+  { label: '11 Big picture', story: 'Everything on one diagram.', setup: setup10, run: run10, q: 'What breaks when one chat server isn\'t enough?', a: ['Aman and Riya may be connected to different servers.', 'Aman\'s server has no connection to Riya. Finding her is next class (Redis Pub/Sub).'] }
 ]);
