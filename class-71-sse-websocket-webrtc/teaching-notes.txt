@@ -1,0 +1,164 @@
+CLASS 71 - TEACHING NOTES: SSE and WebSocket
+Use case all along: Swiggy. Order #7 is on its way. The customer wants to see where the rider is.
+
+
+========================================================================
+ PART 1: SSE (Server-Sent Events)
+========================================================================
+
+--- WHAT TO SAY (flashcards) ---
+
+[1] The problem
+    Normal HTTP: the app asks, the server answers, done.
+    The server can never speak first. So how does the rider's new location reach the customer?
+
+[2] SSE in one line
+    The customer's app asks ONCE: "keep sending me updates".
+    The server never finishes the answer. It keeps adding to it whenever there is news.
+
+[3] Like a phone call
+    You call, say one sentence ("tell me about order 7"), then just listen.
+    The other side keeps talking whenever they have something new.
+
+[4] Who calls what
+    Customer app  ->  GET /events     once. This answer never ends.
+    Rider app     ->  POST /send      every time the rider moves. A normal request.
+    The server takes the rider's news and writes it into the customer's open answer.
+
+[5] The server does NOT call the customer
+    The customer's phone has no address the server can call.
+    The server only writes into the answer of the request the customer already made.
+
+[6] One way only
+    Server -> customer: yes.  Customer -> server on the same line: no.
+    If the customer wants to say "ring the bell", that needs a separate request.
+
+[7] The special header
+    Browser sends:  Accept: text/event-stream     ("keep the answer open, send me events")
+    Server replies: Content-Type: text/event-stream
+
+[8] "Stream" here is not a Redis Stream
+    It just means data arriving bit by bit. Nothing is stored. Miss it, and it's gone.
+
+[9] It reconnects by itself
+    If the line drops, the browser opens it again automatically.
+
+[10] Used for
+    Live cricket score, stock prices, order status, AI answers typing out word by word (ChatGPT, Claude).
+
+[11] Code, in two lines
+    Server: return an SseEmitter (the open answer); call emitter.send("...") to add a message.
+    Browser: new EventSource("/events"); onmessage runs for each message.
+    No extra dependency: it's part of normal Spring web.
+
+
+--- DEMO: IntelliJ + browser + Postman ---
+
+ #  DO                                                          SAY
+ 1  IntelliJ: run SseDemoApplication (class-71/sse-demo)        "Just a controller. No database."
+    -> console: Tomcat started on port 8080
+ 2  Show SseController: subscribe() and send()                  "GET /events is the customer listening.
+                                                                  POST /send is the rider giving news."
+ 3  Browser: open http://localhost:8080                         "This page is the customer's app. It calls
+    -> "waiting for updates..."                                   GET /events once."
+    -> console: CUSTOMER connected: line is open
+ 4  Postman: "1. Rider: 2 km away"                              "The rider moved. Watch the browser:
+    -> browser shows 2 km away, no reload                         no refresh, no new request from the customer."
+ 5  Postman: "2. Rider: 1 km away", "3. Rider: at your door"    "Every rider update is a new request.
+    -> browser updates each time                                  The customer made only one."
+
+ If Postman says "no customer is listening yet": open the page (step 3) first.
+
+
+--- DEMO: DevTools (Inspect) ---
+
+ #  DO                                                          SAY
+ 1  Open DevTools -> Network, THEN reload the page              "DevTools only records what happens while it's open."
+ 2  Click the "events" row                                      "Type: eventsource. Look at the time: it keeps
+                                                                  running. This request never ends."
+ 3  Headers -> Request headers                                  "Accept: text/event-stream: the browser asking
+                                                                  to keep the answer open."
+ 4  Send 2-3 messages from Postman                              "No new rows appear in the list. Everything comes
+                                                                  down that one open request."
+ 5  Console: source.close()                                     "Now we hang up."
+ 6  events -> EventStream tab                                   "Every message, with the time it arrived."
+    (in our Chrome this tab shows up only after closing)
+ 7  Reload the page before sending again                        "Closed line = nobody listening. Reload to reconnect."
+
+
+========================================================================
+ PART 2: WebSocket
+========================================================================
+
+--- WHAT TO SAY (flashcards) ---
+
+[1] What SSE couldn't do
+    The customer wants to reply: "please ring the bell". SSE is one way. We need both ways.
+
+[2] WebSocket in one line
+    An always-open line where BOTH sides can send messages, any time.
+
+[3] Like a phone call where both people talk
+    SSE: you only listen.  WebSocket: you both talk, on the same call.
+
+[4] Who connects
+    Customer app and rider app each open ONE line to /chat, once.
+    After that, nobody makes new requests. They just send messages on their open line.
+
+[5] How the line opens
+    It starts as a normal HTTP request saying "Upgrade: websocket".
+    Server answers "101 Switching Protocols". From then on it's not HTTP any more: it's a two-way pipe.
+
+[6] What the server does
+    A message comes in on one person's line -> the server writes it into the other person's line.
+    Rider -> customer and customer -> rider work exactly the same way.
+
+[7] ws:// and wss://
+    ws:// is like http://.  wss:// is the secure one, like https://.
+
+[8] SSE vs WebSocket, in one line each
+    SSE: one way (server -> customer), 2 APIs in our demo (/events to listen, /send to talk).
+    WebSocket: both ways, 1 endpoint (/chat) for everyone.
+
+[9] Used for
+    Chat (WhatsApp Web, Slack), live location with replies, multiplayer games, Google Docs-style editing.
+
+[10] Code, in three pieces
+    ChatHandler: keeps the list of open lines; a message from one goes to everyone else.
+    WebSocketConfig: just says "/chat -> ChatHandler" (the WebSocket version of @GetMapping).
+    Browser: new WebSocket("ws://localhost:8081/chat"); onmessage to receive; ws.send(...) to send.
+    Needs one extra dependency: spring-boot-starter-websocket.
+
+
+--- DEMO: IntelliJ + browser + Postman ---
+
+ #  DO                                                          SAY
+ 1  IntelliJ: run WebsocketDemoApplication                      "Port 8081, so it can run next to the SSE demo."
+    (class-71/websocket-demo) -> Tomcat started on port 8081
+ 2  Show ChatHandler and WebSocketConfig                        "Config: /chat goes to ChatHandler.
+                                                                  Handler: pass each message to everyone else."
+ 3  Browser: open http://localhost:8081                         "The customer opens their line."
+    -> console: CONNECTED: 1 people on /chat
+ 4  Postman: Class 71 - WebSocket -> "5. Rider chat"            "The rider opens their own line."
+    -> Connect -> console: CONNECTED: 2 people on /chat
+ 5  Postman: send "2 km away"                                   "Rider -> customer, on the rider's line."
+    -> browser shows 2 km away
+ 6  Browser: click Send ("please ring the bell")                "Customer -> rider, on the customer's line.
+    -> Postman Messages shows it                                  This is what SSE couldn't do."
+
+ Postman setup (once): New -> WebSocket -> ws://localhost:8081/chat -> Save -> New Collection "Class 71 - WebSocket".
+ (Postman won't put a WebSocket request into a normal HTTP collection.)
+
+
+--- DEMO: DevTools (Inspect) ---
+
+ #  DO                                                          SAY
+ 1  DevTools -> Network -> filter "Socket", then reload         "Just one row: chat."
+ 2  chat -> Headers -> General                                  "Status 101 Switching Protocols:
+                                                                  HTTP turned into a WebSocket."
+ 3  Request headers                                             "Connection: Upgrade, Upgrade: websocket."
+ 4  chat -> Messages tab                                        "Every message on this one connection."
+ 5  Send from Postman, then click Send on the page              "Down arrow = received by the customer.
+                                                                  Up arrow (green) = sent by the customer.
+                                                                  Both directions, no new requests."
+    (only messages sent after DevTools opened show up)
