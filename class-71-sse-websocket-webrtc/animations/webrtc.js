@@ -19,18 +19,23 @@ function scene(o) {
   Net.node('cr', { x: 290, y: 420, label: 'Home Wi-Fi router', sub: 'address from Jio/Airtel', kind: 'proxy', w: 180, body: '' });
   Net.node('rr', { x: 710, y: 420, label: 'Mobile network', sub: o.strict ? 'college network: strict' : 'rider on 4G', kind: 'proxy', w: 180, body: '' });
   Net.node('rp', { x: 905, y: 420, label: 'Rider phone', sub: 'on 4G', kind: 'client', w: 175, body: '' });
-  Net.node('stun', { x: 500, y: 85, label: 'STUN server', sub: '"what address do you see?"', kind: 'db', w: 220, body: '' });
-  Net.node('sig', { x: 500, y: 250, label: 'Our app server', sub: 'passes messages (signaling)', kind: 'lb', w: 220, body: '' });
   Net.link('cp', 'cr'); Net.link('rr', 'rp');
-  Net.link('cr', 'stun', { dashed: true }); Net.link('rr', 'stun', { dashed: true });
-  Net.link('cr', 'sig', { dashed: true }); Net.link('rr', 'sig', { dashed: true });
+  if (!o.noHelpers) { addStun(); addSig(); }
   paint();
+}
+function addStun() {
+  Net.node('stun', { x: 500, y: 85, label: 'STUN server', sub: '"what address do you see?"', kind: 'db', w: 220, body: '' });
+  Net.link('cr', 'stun', { dashed: true }); Net.link('rr', 'stun', { dashed: true });
+}
+function addSig() {
+  Net.node('sig', { x: 500, y: 250, label: 'Our app server', sub: 'passes messages (signaling)', kind: 'lb', w: 220, body: '' });
+  Net.link('cr', 'sig', { dashed: true }); Net.link('rr', 'sig', { dashed: true });
 }
 
 // ================= 1: the problem =================
 function setup1() {
-  scene();
-  panel([['Private address', 'Your phone\'s address (<code>192.168.1.5</code>) only works <b>inside</b> your home Wi-Fi. The rider\'s (<code>10.20.3.7</code>) only works inside the mobile network'], ['Public address', 'Only the <b>router</b> has one (<code>49.36.10.2</code>), given by your internet provider. Everything your phone sends goes out through it'], ['The problem', 'Neither phone knows a usable address for the other one, or even for itself as seen from outside']]);
+  scene({ noHelpers: true });
+  panel([['Private address', 'Your phone\'s address (<code>192.168.1.5</code>) only works <b>inside</b> your home Wi-Fi. The rider\'s (<code>10.20.3.7</code>) only works inside the mobile network'], ['Public address', 'Only the <b>router</b> has one (<code>49.36.10.2</code>), given by your internet provider. Everything your phone sends goes out through it'], ['The problem', 'Neither phone knows a usable address for the other one, or even for itself as seen from outside'], ['The two helpers', '<b>STUN server</b>: tells each phone its outside address. <b>Our app server</b>: passes those addresses between the phones']]);
 }
 async function run1(ctx) {
   say('You want to video call the rider. Your phone only knows its own address, <b>192.168.1.5</b>.');
@@ -40,8 +45,20 @@ async function run1(ctx) {
   Net.check(ctx);
   await lose('cr', 'rr', 'to 10.20.3.7');
   Net.check(ctx);
-  await Net.beat(ctx, 2200);
-  say('So each phone first needs its <b>outside</b> address, and then they need to swap them.', 'win');
+  await Net.beat(ctx, 2600);
+  say('Two things are missing. First: each phone doesn\'t even know its own <b>outside</b> address.');
+  await Net.beat(ctx, 2000);
+  addStun();
+  Net.set('stun', { body: tw([['job: tell each phone', 'amb'], ['its outside address', 'amb']]) });
+  Net.flash('stun', 'ok');
+  say('That\'s the <b>STUN server</b>\'s job (step 2).');
+  await Net.beat(ctx, 2400);
+  say('Second: the phones must <b>tell each other</b> those addresses.');
+  await Net.beat(ctx, 1800);
+  addSig();
+  Net.set('sig', { body: tw([['job: pass the addresses', 'amb'], ['between the two phones', 'amb']]) });
+  Net.flash('sig', 'ok');
+  say('That\'s <b>our app server</b>\'s job (step 3). Then the phones can talk directly (step 4).', 'win');
 }
 
 // ================= 2: STUN =================
