@@ -1,0 +1,89 @@
+CLASS 74 - TEACHING NOTES: WhatsApp Web DevTools demo
+Goal: show that text goes over the WebSocket, but media goes to a separate media server
+with a signed URL (the "pre-signed URL" idea), and never through the chat socket.
+
+
+========================================================================
+ BEFORE CLASS
+========================================================================
+
+- Use a chat with nothing private in it (the "Notes" self-chat had a password in it).
+- Keep your phone ready to send a photo to that chat.
+- Chrome, logged in to web.whatsapp.com.
+
+
+========================================================================
+ DEMO STEPS
+========================================================================
+
+[1] Start recording
+    web.whatsapp.com -> Cmd+Option+I -> Network tab -> tick "Keep log" -> reload (Cmd+R)
+
+[2] Text goes over the WebSocket
+    Click "Socket" -> click  chat?ED=...  -> "Messages" tab
+    Clear frames with the clear icon INSIDE the Messages panel (left of "All").
+    (The clear icon in the top toolbar wipes the whole list, socket row included.)
+    Type "hello" WITHOUT pressing Enter
+        -> many small up rows (40-55 B)   = typing indicator
+    Clear frames, press Enter
+        -> one up row ~300 B              = the message (encrypted, so "Binary message")
+        -> down ~71 B                     = server saved it: single tick
+        -> down 78 B / up 72 B pairs      = receipts (double tick / read)
+
+[3] A photo does NOT go over the WebSocket
+    Clear frames, attach a photo, send.
+    Biggest frame is only ~7 kB = the message: media URL + decryption key + tiny blurred thumbnail.
+    The photo itself (hundreds of KB) is not there.
+
+[4] The upload goes to the media server
+    Click "Fetch/XHR", filter:  whatsapp.net
+    Click the POST WITHOUT "resume=1" -> Headers -> Request headers
+        :authority     media-del2-2.cdn.whatsapp.net   -> a different server (del = Delhi)
+        :path          /mms/image/...?auth=...&token=... -> signed permission to upload
+        Content-Length 374074                          -> the photo itself (~374 KB)
+        Origin web.whatsapp.com + Sec-Fetch-Site cross-site -> page sent it to another host
+    Protocol column shows h3 = HTTP/3 (QUIC), ties back to class 70.
+
+[5] The receiver downloads with a signed URL
+    Filter:  mms-type   (only media downloads have it)
+    Phone sends a NEW photo -> click the new GET
+        host  media.fdel1-6.fna.whatsapp.net   -> CDN edge, not the chat server
+        oh=   signature (change one character -> download refused)
+        oe=   expiry in hex (6B09BD71 = 27 Nov 2026, about 30 days = retention)
+        Content-Disposition: filename=file.enc -> downloaded ENCRYPTED, only the chat has the key
+
+
+========================================================================
+ QUESTIONS STUDENTS MAY ASK
+========================================================================
+
+Why two chat?ED=... socket rows?
+    The first socket dropped and WhatsApp reconnected (sleep, Wi-Fi blip).
+    The old one's frames stop; the live one keeps getting frames.
+    Same as our design: reconnect -> new server -> subscribes to the user's channel again.
+
+Why two POSTs for the same file?
+    POST ...&resume=1 with Content-Length 0  = "do you already have this file, or part of it?"
+    POST without resume, with the bytes      = the real upload.
+    That is how a dropped upload resumes instead of starting again.
+
+Why two different file names uploaded?
+    The big one is the file, the small one (~5.6 KB) is likely its preview.
+
+What is "Preflight"?
+    Browser asks the other host with OPTIONS whether web.whatsapp.com may send to it (CORS).
+    Proof that it is a separate server. Chrome remembers the answer for a while,
+    so later uploads skip it.
+
+Why does the Size column say 0.4 kB for the upload?
+    Size = the REPLY size (small JSON). The upload size is Content-Length in Request headers.
+
+Red 404 rows?
+    Old media that is gone from the server, likely the 30-day expiry.
+
+What is Fetch/XHR?
+    Requests the page's JavaScript makes itself (fetch() / XMLHttpRequest) = API calls.
+    Socket = WebSocket connections.
+
+What is mmg.whatsapp.net / media-...whatsapp.net?
+    WhatsApp's media server = the "blob storage (S3) + CDN" box in our design.
