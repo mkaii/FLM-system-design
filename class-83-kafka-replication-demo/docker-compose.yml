@@ -1,0 +1,44 @@
+# 3 Kafka servers (each = broker + controller) and 1 client box to type commands from.
+# Start: docker compose up -d     Stop: docker compose down
+x-kafka: &kafka
+  image: apache/kafka:4.1.0
+  environment: &env
+    CLUSTER_ID: football-cluster-01
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+    KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+services:
+  kafka1:
+    <<: *kafka
+    container_name: kafka1
+    environment:
+      <<: *env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+  kafka2:
+    <<: *kafka
+    container_name: kafka2
+    environment:
+      <<: *env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+  kafka3:
+    <<: *kafka
+    container_name: kafka3
+    environment:
+      <<: *env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092
+  client:
+    image: apache/kafka:4.1.0
+    container_name: client
+    entrypoint: ["sleep", "infinity"]
